@@ -1,2 +1,2 @@
 # fatpage
-fast textfile parser generator
+fast(ish) textfile parser generator
