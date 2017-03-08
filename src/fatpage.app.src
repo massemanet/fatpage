@@ -1,3 +1,3 @@
-{application, fatpage
+{application, fatpage,
  [{description, "fast(ish) textfile parser generator"},
   {vsn, "0.0.0"}]}.
