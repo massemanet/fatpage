@@ -19,20 +19,19 @@
 
 -module(csv).
 
--export([fold/3]).
+-export([fold/3, parse/1]).
 
--record(state, {stream, pos=0, cb_fun, cb_acc, stash=[], res=hit}).
+-record(state, {stream, pos=0, cb_fun, cb_acc, stash=[], res=hit, tmp}).
+
+parse(Filename) ->
+  fold(Filename, fun parser/2, []).
+
 fold(Filename, Fun , Acc) ->
-  top(#state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc}, fun s_file/1).
+  eof(s_file(mk_state(Filename, Fun, Acc))).
 
-top(State0, Fun) ->
-  flush(Fun(State0)).
-
-flush(State) ->
-  case peek(State) of
-    {State1, eof} -> State1#state.cb_acc;
-    {State1, Char} -> io:fwrite("~p",[Char]), flush(State1)
-  end.
+parser([[]], Acc) -> Acc;
+parser(eof, Acc) -> lists:reverse(Acc);
+parser(Rec, Acc) -> [lists:reverse(Rec)|Acc].
 
 %%-----------------------------------------------------------------------------
 
@@ -42,7 +41,7 @@ s_file(S0) ->
 
 s_record(S0) ->
   S1 = once(S0, fun s_field/1),
-  many(S1, fun s_comma_field/1).
+  callback(many(S1, fun s_comma_field/1)).
 
 s_eol_record(S0) ->
   S1 = once(S0, fun l_EOL/1),
@@ -58,11 +57,11 @@ s_field(S0) ->
 
 s_escaped(S0) ->
   S = once(S0, fun l_DQUOTE/1),
-  S1 = many(S, fun l_QCHAR/1),
+  S1 = many_stash(S, fun l_QCHAR/1),
   once(S1, fun l_DQUOTE/1).
 
 s_non_escaped(S0) ->
-  many(S0, fun l_TEXTDATA/1).
+  many_stash(S0, fun l_TEXTDATA/1).
 
 %%-----------------------------------------------------------------------------
 
@@ -132,14 +131,25 @@ peek(State = #state{stream=STREAM0, pos=Pos}) ->
   {STREAM, Char} = STREAM0(STREAM0, Pos),
   {State#state{stream=STREAM, pos=Pos+1}, Char}.
 
-hit(State = #state{stash=Stash}, El) ->
-  State#state{res=hit, stash=[El|Stash]}.
+hit(State, El) ->
+  State#state{res=hit, tmp=El}.
 
 miss(State) ->
   backup(State#state{res=miss}).
 
-callback(State = #state{cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
-  State#state{cb_acc=Fun(Stash, Acc), stash=[]}.
+callback(State = #state{res=hit, cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
+  State#state{cb_acc=Fun(Stash, Acc), stash=[]};
+callback(State) ->
+  State.
+
+eof(#state{cb_fun=Fun, cb_acc=Acc}) ->
+  Fun(eof, Acc).
+
+new_frame(State = #state{stash=Stash}) ->
+  State#state{stash=[[]|Stash]}.
+
+push_frame(State = #state{stash=[Frame|Stash]}, El) ->
+  State#state{stash=[[El|Frame]|Stash]}.
 
 %%-----------------------------------------------------------------------------
 
@@ -153,10 +163,10 @@ do_choose(State = #state{res=miss}, []) ->
 do_choose(State = #state{res=miss}, [Choice|Choices]) ->
   do_choose(Choice(State#state{res=hit}), Choices);
 do_choose(State = #state{res=hit}, _) ->
-  callback(State).
+  State.
 
 many(State0 = #state{res=hit}, Fun) ->
-  callback(do_many(Fun(State0), Fun));
+  do_many(Fun(State0), Fun);
 many(State = #state{res=miss}, _) ->
   State.
 
@@ -165,12 +175,26 @@ do_many(State = #state{res=hit}, Fun) ->
 do_many(State = #state{res=miss}, _) ->
   State#state{res=hit}.
 
+many_stash(State = #state{res=hit}, Fun) ->
+  do_many_stash(Fun(new_frame(State)), Fun);
+many_stash(State = #state{res=miss}, _) ->
+  State.
+
+do_many_stash(State = #state{res=hit, tmp=Tmp}, Fun) ->
+  do_many_stash(Fun(push_frame(State, Tmp)), Fun);
+do_many_stash(State = #state{res=miss}, _) ->
+  State#state{res=hit}.
+
 once(State = #state{res=hit}, Fun) ->
-  callback(Fun(State));
+  Fun(State);
 once(State = #state{res=miss}, _) ->
   State.
 
 %%-----------------------------------------------------------------------------
+
+mk_state(Filename, Fun , Acc) ->
+  #state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc}.
+
 mk_stream(Filename) ->
   case file:open(Filename, [read, raw, binary, compressed]) of
     {ok, FD} ->
