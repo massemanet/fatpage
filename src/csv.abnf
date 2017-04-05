@@ -1,0 +1,12 @@
+file = record *eol-record [EOL]
+eol-record = EOL record
+record = field *comma-field
+comma-field = COMMA field
+field = (escaped / non-escaped)
+escaped = DQUOTE *QCHAR DQUOTE
+non-escaped = *TEXTDATA
+QCHAR = (%x20-21 / %x23-7E / %x0D / %x0A / 2DQUOTE)
+COMMA = %x2C
+DQUOTE =  %x22
+EOL = ( %x0D / %x0A / %x0D %x0A )
+TEXTDATA =  %x20-21 / %x23-2B / %x2D-7E
