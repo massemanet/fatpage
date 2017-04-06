@@ -1,12 +1,23 @@
-file = record *eol-record [EOL]
-eol-record = EOL record
-record = field *comma-field
+file        = record *eol-record [EOL]
+
+eol-record  = EOL record
+
+record      = field *comma-field                           : call().
+
 comma-field = COMMA field
-field = (escaped / non-escaped)
-escaped = DQUOTE *QCHAR DQUOTE
-non-escaped = *TEXTDATA
-QCHAR = (%x20-21 / %x23-7E / %x0D / %x0A / 2DQUOTE)
-COMMA = %x2C
-DQUOTE =  %x22
-EOL = ( %x0D / %x0A / %x0D %x0A )
-TEXTDATA =  %x20-21 / %x23-2B / %x2D-7E
+
+field       = escaped / non-escaped                        : push($1).
+
+escaped     = DQUOTE *QCHAR DQUOTE                         : pusn($2).
+
+non-escaped = *TEXTDATA                                    : push($1).
+
+QCHAR       = %x22 %x22 / %x0A / %x0D / %x20-21 / %x23-7E  : sub("\"\"","\"").
+
+COMMA       = %x2C
+
+DQUOTE      = %x22
+
+EOL         =  %x0D %x0A / %x0D / %x0A
+
+TEXTDATA    =  %x20-21 / %x23-2B / %x2D-7E
