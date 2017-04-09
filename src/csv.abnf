@@ -6,11 +6,11 @@ record      = field *comma-field                           : call().
 
 comma-field = COMMA field
 
-field       = escaped / non-escaped                        : push($1).
+field       = escaped / non-escaped                        : push(1).
 
-escaped     = DQUOTE *QCHAR DQUOTE                         : pusn($2).
+escaped     = DQUOTE *QCHAR DQUOTE                         : push(2).
 
-non-escaped = *TEXTDATA                                    : push($1).
+non-escaped = *TEXTDATA                                    : push(1).
 
 QCHAR       = %x22 %x22 / %x0A / %x0D / %x20-21 / %x23-7E  : sub("\"\"","\"").
 
