@@ -6,18 +6,22 @@ record      = field *comma-field                           : call().
 
 comma-field = COMMA field
 
-field       = escaped / non-escaped                        : push(1).
+field       = escaped / non-escaped
 
-escaped     = DQUOTE *QCHAR DQUOTE                         : push(2).
+escaped     = DQUOTE *qchar DQUOTE                         : push(2).
 
 non-escaped = *TEXTDATA                                    : push(1).
 
-QCHAR       = %x22 %x22 / %x0A / %x0D / %x20-21 / %x23-7E  : sub("\"\"","\"").
+qchar       = DQCHAR / SQCHAR
+
+DQCHAR      = %x22 %x22                                    : sub(34).
+
+SQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E
 
 COMMA       = %x2C
 
 DQUOTE      = %x22
 
-EOL         =  %x0D %x0A / %x0D / %x0A
+EOL         = %x0D %x0A / %x0D / %x0A
 
-TEXTDATA    =  %x20-21 / %x23-2B / %x2D-7E
+TEXTDATA    = %x20-21 / %x23-2B / %x2D-7E
