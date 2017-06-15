@@ -103,7 +103,8 @@ l_SQCHAR(State0) ->
   if
     (Char0 =:= $\n) orelse
     (Char0 =:= $\r) orelse
-    ((16#20 =< Char0) andalso (Char0 =< 16#7E)) ->
+    ((16#20 =< Char0) andalso (Char0 =< 16#21)) orelse
+    ((16#23 =< Char0) andalso (Char0 =< 16#7E)) ->
       hit(State1, Char0);
     true ->
       miss(State1)
