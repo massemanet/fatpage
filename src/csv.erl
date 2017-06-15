@@ -21,7 +21,7 @@
 
 -export([fold/3, parse/1]).
 
--record(state, {stream, pos=0, cb_fun, cb_acc, stash=[], match}).
+-record(state, {stream, pos=0, cb_fun, cb_acc, stash, open=false}).
 
 parse(Filename) ->
   fold(Filename, fun parser/2, []).
@@ -29,9 +29,9 @@ parse(Filename) ->
 fold(Filename, Fun , Acc) ->
   eof(s_file(mk_state(Filename, Fun, Acc))).
 
-parser([[]], Acc) -> Acc;
+parser([[]], Acc) -> Acc;                 % empty line
 parser(eof, Acc) -> lists:reverse(Acc);
-parser(Rec, Acc) -> [lists:reverse(Rec)|Acc].
+parser(Rec, Acc) -> [Rec|Acc].
 
 %%-----------------------------------------------------------------------------
 
@@ -41,7 +41,8 @@ s_file(S0) ->
 
 s_record(S0) ->
   S1 = once(S0, fun s_field/1),
-  callback(many(S1, fun s_comma_field/1)).
+  S2 = many(S1, fun s_comma_field/1),
+  pop(S2).
 
 s_eol_record(S0) ->
   S1 = once(S0, fun l_EOL/1),
@@ -57,11 +58,11 @@ s_field(S0) ->
 
 s_escaped(S0) ->
   S = once(S0, fun l_DQUOTE/1),
-  S1 = many_stash(S, fun l_QCHAR/1),
+  S1 = close(many(open(S), fun l_QCHAR/1)),
   once(S1, fun l_DQUOTE/1).
 
 s_non_escaped(S0) ->
-  many_stash(S0, fun l_TEXTDATA/1).
+  close(many(open(S0), fun l_TEXTDATA/1)).
 
 %%-----------------------------------------------------------------------------
 
@@ -124,32 +125,31 @@ l_TEXTDATA(State0) ->
 
 %%-----------------------------------------------------------------------------
 
-backup(State = #state{pos=Pos}) ->
-  State#state{pos=Pos-1}.
-
-peek(State = #state{stream=STREAM0, pos=Pos}) ->
-  {STREAM, Char} = STREAM0(STREAM0, Pos),
-  {State#state{stream=STREAM, pos=Pos+1}, Char}.
-
 hit(State, El) ->
-  State#state{match=El}.
+  case State#state.open of
+    false -> State;
+    true ->
+      [Stash|Stashs] = State#state.stash,
+      State#state{stash = [[El|Stash]|Stashs]}
+  end.
 
 miss(State) ->
   throw(backup(State)).
 
-callback(State = #state{cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
-  State#state{cb_acc=Fun(Stash, Acc), stash=[]};
-callback(State) ->
-  State.
+pop(State = #state{cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
+  State#state{cb_acc=Fun(lists:reverse(Stash), Acc), stash=undefined}.
+
+open(State) ->
+  case State#state.stash of
+    undefined -> State#state{open=true, stash=[[]]};
+    Stash -> State#state{open=true, stash=[[]|Stash]}
+  end.
+
+close(State = #state{stash=[Stash|Stashs]}) ->
+  State#state{open=false, stash=[lists:reverse(Stash)|Stashs]}.
 
 eof(#state{cb_fun=Fun, cb_acc=Acc}) ->
   Fun(eof, Acc).
-
-new_frame(State = #state{stash=Stash}) ->
-  State#state{stash=[[]|Stash]}.
-
-push_frame(State = #state{stash=[Frame|Stash]}, El) ->
-  State#state{stash=[[El|Frame]|Stash]}.
 
 %%-----------------------------------------------------------------------------
 
@@ -169,6 +169,13 @@ once(State, Fun) ->
   Fun(State).
 
 %%-----------------------------------------------------------------------------
+
+peek(State = #state{stream=STREAM0, pos=Pos}) ->
+  {STREAM, Char} = STREAM0(STREAM0, Pos),
+  {State#state{stream=STREAM, pos=Pos+1}, Char}.
+
+backup(State = #state{pos=Pos}) ->
+  State#state{pos=Pos-1}.
 
 mk_state(Filename, Fun , Acc) ->
   #state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc}.
