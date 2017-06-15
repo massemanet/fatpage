@@ -21,7 +21,7 @@
 
 -export([fold/3, parse/1]).
 
--record(state, {stream, pos=0, cb_fun, cb_acc, stash=[], res=hit, tmp}).
+-record(state, {stream, pos=0, cb_fun, cb_acc, stash=[], match}).
 
 parse(Filename) ->
   fold(Filename, fun parser/2, []).
@@ -132,12 +132,12 @@ peek(State = #state{stream=STREAM0, pos=Pos}) ->
   {State#state{stream=STREAM, pos=Pos+1}, Char}.
 
 hit(State, El) ->
-  State#state{res=hit, tmp=El}.
+  State#state{match=El}.
 
 miss(State) ->
-  backup(State#state{res=miss}).
+  throw(backup(State)).
 
-callback(State = #state{res=hit, cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
+callback(State = #state{cb_fun=Fun, cb_acc=Acc, stash=Stash}) ->
   State#state{cb_acc=Fun(Stash, Acc), stash=[]};
 callback(State) ->
   State.
@@ -153,42 +153,20 @@ push_frame(State = #state{stash=[Frame|Stash]}, El) ->
 
 %%-----------------------------------------------------------------------------
 
-choose(State = #state{res=hit}, [Choice|Choices]) ->
-  do_choose(Choice(State), Choices);
-choose(State, _) ->
-  State.
+choose(State, []) ->
+  throw(State);
+choose(State, [Choice|Choices]) ->
+  try Choice(State)
+  catch State1 -> choose(State1, Choices)
+  end.
 
-do_choose(State = #state{res=miss}, []) ->
-  State;
-do_choose(State = #state{res=miss}, [Choice|Choices]) ->
-  do_choose(Choice(State#state{res=hit}), Choices);
-do_choose(State = #state{res=hit}, _) ->
-  State.
+many(State, Fun) ->
+  try many(Fun(State), Fun)
+  catch State1 -> State1
+  end.
 
-many(State0 = #state{res=hit}, Fun) ->
-  do_many(Fun(State0), Fun);
-many(State = #state{res=miss}, _) ->
-  State.
-
-do_many(State = #state{res=hit}, Fun) ->
-  do_many(Fun(State), Fun);
-do_many(State = #state{res=miss}, _) ->
-  State#state{res=hit}.
-
-many_stash(State = #state{res=hit}, Fun) ->
-  do_many_stash(Fun(new_frame(State)), Fun);
-many_stash(State = #state{res=miss}, _) ->
-  State.
-
-do_many_stash(State = #state{res=hit, tmp=Tmp}, Fun) ->
-  do_many_stash(Fun(push_frame(State, Tmp)), Fun);
-do_many_stash(State = #state{res=miss}, _) ->
-  State#state{res=hit}.
-
-once(State = #state{res=hit}, Fun) ->
-  Fun(State);
-once(State = #state{res=miss}, _) ->
-  State.
+once(State, Fun) ->
+  Fun(State).
 
 %%-----------------------------------------------------------------------------
 
