@@ -230,15 +230,29 @@ mk_reader(FD) ->
       end
   end.
 
-mk_streamf(READER, {OSize, OChunk}) ->
-  {Size, Chunk} = READER(read),
+mk_streamf(READER) ->
+  mk_streamf(READER, 0, READER(read), READER(read)).
+
+mk_streamf(READER, Offset, {Size0, Chunk0}, {Size1, Chunk1}) ->
   fun(This, Pos) ->
-      try <<_:Pos/binary, Char, _/binary>> = OChunk,
-           {This, Char}
-      catch _:_ ->
-          case Pos == OSize andalso Size == 0 of
-            true -> READER(close), {This, eof};
-            false -> error(#{pos=>Pos, osize=>OSize, chunk=>Chunk})
+      if
+        Pos < Offset -> error({read_out_of_range, #{pos=>Pos, offset=>Offset}});
+        Pos < Offset+Size0 -> {This, char(Pos-Offset, Chunk0)};
+        Pos < Offset+Size0+Size1 -> {This, char(Pos-Offset-Size0, Chunk1)};
+        true ->
+io:fwrite(" ~p, ~p, ~p, ~p~n", [Pos, Offset, Size0, Size1]),
+          case Chunk1 of
+            eof ->
+              READER(close),
+              {This, eof};
+            _ ->
+              R = READER(read),
+              STREAM = mk_streamf(READER, Offset+Size0, {Size1, Chunk1}, R),
+              STREAM(STREAM, Pos)
           end
       end
   end.
+
+char(Pos, Chunk) ->
+  <<_:Pos/binary, Char, _/binary>> = Chunk,
+  Char.
