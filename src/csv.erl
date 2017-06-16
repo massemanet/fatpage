@@ -4,28 +4,15 @@
 
 %% ABNF as per RFC4180
 %%
-%%    file = record *(eol_record) [EOL]
-%%    eol_record = EOL record
-%%    record = field *(comma_field)
-%%    comma_field = COMMA field
-%%    field = (escaped / non-escaped)
-%%    escaped = DQUOTE *QCHAR DQUOTE
-%%    non-escaped = *TEXTDATA
-%%    QCHAR = (%x20-21 / %x23-7E / %x0D / %x0A / 2DQUOTE)
-%%    COMMA = %x2C
-%%    DQUOTE =  %x22
-%%    EOL = ( %x0D / %x0A / %x0D %x0A )
-%%    TEXTDATA =  %x20-21 / %x23-2B / %x2D-7E
-
 %% file        = record *eol-record [EOL]
 %% eol-record  = EOL record
-%% record      = field *comma-field                           : pop().
+%% record      = field *comma-field                 : pop().
 %% comma-field = COMMA field
 %% field       = escaped / non-escaped
-%% escaped     = DQUOTE *qchar DQUOTE                         : push(2).
-%% non-escaped = *TEXTDATA                                    : push(1).
+%% escaped     = DQUOTE *qchar DQUOTE               : push(2).
+%% non-escaped = *TEXTDATA                          : push(1).
 %% qchar       = DQCHAR / SQCHAR
-%% DQCHAR      = %x22 %x22                                    : sub(34).
+%% DQCHAR      = %x22 %x22                          : sub(34).
 %% SQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E
 %% COMMA       = %x2C
 %% DQUOTE      = %x22
@@ -38,17 +25,28 @@
 
 -record(state, {stream, pos=0, cb_fun, cb_acc, stash, open=false}).
 
+%%-----------------------------------------------------------------------------
+%% API
+
 parse(Filename) ->
-  fold(Filename, fun parser/2, []).
+  fold(Filename, fun default_cb/2, []).
 
 fold(Filename, Fun , Acc) ->
-  eof(s_file(mk_state(Filename, Fun, Acc))).
-
-parser([[]], Acc) -> Acc;                 % empty line
-parser(eof, Acc) -> lists:reverse(Acc);
-parser(Rec, Acc) -> [Rec|Acc].
+  eof(s_init(#state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc})).
 
 %%-----------------------------------------------------------------------------
+%% default callback
+
+default_cb([[]], Acc) -> Acc;                 % empty line
+default_cb(eof, Acc) -> lists:reverse(Acc);
+default_cb(Rec, Acc) -> [Rec|Acc].
+
+%%-----------------------------------------------------------------------------
+%% CSV rules
+%% generated from the ABNF
+
+s_init(S0) ->
+  s_file(S0).
 
 s_file(S0) ->
   S1 = once(S0, fun s_record/1),
@@ -84,6 +82,8 @@ s_qchar(S0) ->
   choose(S0, Choices).
 
 %%-----------------------------------------------------------------------------
+%% CSV literals
+%% generated from the ABNF
 
 l_DQCHAR(State0) ->
   {State1, Char0} = peek(State0),
@@ -151,6 +151,7 @@ l_TEXTDATA(State0) ->
   end.
 
 %%-----------------------------------------------------------------------------
+%% state operations
 
 hit(State, El) ->
   case State#state.open of
@@ -178,7 +179,15 @@ close(State = #state{stash=[Stash|Stashs]}) ->
 eof(#state{cb_fun=Fun, cb_acc=Acc}) ->
   Fun(eof, Acc).
 
+peek(State = #state{stream=STREAM0, pos=Pos}) ->
+  {STREAM, Char} = STREAM0(STREAM0, Pos),
+  {State#state{stream=STREAM, pos=Pos+1}, Char}.
+
+backup(State = #state{pos=Pos}) ->
+  State#state{pos=Pos-1}.
+
 %%-----------------------------------------------------------------------------
+%% ABNF operations
 
 choose(State, []) ->
   throw(State);
@@ -196,24 +205,12 @@ once(State, Fun) ->
   Fun(State).
 
 %%-----------------------------------------------------------------------------
-
-peek(State = #state{stream=STREAM0, pos=Pos}) ->
-  {STREAM, Char} = STREAM0(STREAM0, Pos),
-  {State#state{stream=STREAM, pos=Pos+1}, Char}.
-
-backup(State = #state{pos=Pos}) ->
-  State#state{pos=Pos-1}.
-
-mk_state(Filename, Fun , Acc) ->
-  #state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc}.
+%% stream handling
 
 mk_stream(Filename) ->
   case file:open(Filename, [read, raw, binary, compressed]) of
-    {ok, FD} ->
-      READER = mk_reader(FD),
-      mk_streamf(READER, READER(read));
-    {error, R} ->
-      error({open_error, R, Filename})
+    {ok, FD} -> mk_streamf(mk_reader(FD));
+    {error, R} -> error({open_error, R, Filename})
   end.
 
 mk_reader(FD) ->
