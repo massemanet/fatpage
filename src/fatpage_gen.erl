@@ -2,7 +2,7 @@
 %% @doc
 %% @end
 
--module(fatpage).
+-module(fatpage_gen).
 
 -export([parse/1]).
 
