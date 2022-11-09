@@ -1,0 +1,27 @@
+file        = record *eol-record [EOL]        : [_YY1|_YY2].
+
+eol-record  = EOL record                      : _YY2.
+
+record      = field *comma-field              : [_YY1|_YY2].
+
+comma-field = COMMA field                     : _YY2.
+
+field       = escaped / non-escaped           : _YY.
+
+escaped     = DQUOTE *qchar DQUOTE            : _YY2.
+
+non-escaped = *TEXTDATA                       : _YY.
+
+qchar       = DQCHAR / SQCHAR                 : _YY.
+
+DQCHAR      = %x22 %x22                       : _YY1.
+
+SQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E : _YY.
+
+TEXTDATA    = %x20-21 / %x23-2B / %x2D-7E     : _YY.
+
+COMMA       = %x2C
+
+DQUOTE      = %x22
+
+EOL         = %x0D %x0A / %x0D / %x0A

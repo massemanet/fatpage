@@ -10,9 +10,9 @@
 %% API
 
 parse(Filename) ->
-  fold(Filename, fun default_cb/2, []).
+  fold(fun default_cb/2, [], Filename).
 
-fold(Filename, Fun , Acc) ->
+fold(Fun, Acc, Filename) ->
   eof(s_init(#state{stream=mk_stream(Filename), cb_fun=Fun, cb_acc=Acc})).
 
 %%-----------------------------------------------------------------------------
@@ -113,7 +113,6 @@ mk_streamf(READER, Offset, {Size0, Chunk0}, {Size1, Chunk1}) ->
         Pos < Offset+Size0 -> {This, char(Pos-Offset, Chunk0)};
         Pos < Offset+Size0+Size1 -> {This, char(Pos-Offset-Size0, Chunk1)};
         true ->
-io:fwrite(" ~p, ~p, ~p, ~p~n", [Pos, Offset, Size0, Size1]),
           case Chunk1 of
             eof ->
               READER(close),

@@ -1,6 +1,8 @@
 *~
 \#*
 .\#*
+*.beam
 /_build/
 /rebar.lock
 erl_crash.dump
+*.abnf.hrl

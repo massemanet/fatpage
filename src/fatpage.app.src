@@ -1,3 +1,7 @@
-{application, fatpage,
+{application,
+ fatpage,
  [{description, "fast(ish) textfile parser generator"},
-  {vsn, "0.0.0"}]}.
+  {vsn, "0.0.0"},
+  {applications,[kernel,stdlib]},
+  {links, [{"sr.ht", "https://sr.ht/~massemanet/fatpage"}]},
+  {licenses, ["MIT"]}]}.
