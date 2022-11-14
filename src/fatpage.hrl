@@ -82,8 +82,8 @@ once(State, Fun) ->
 
 mk_stream(Filename) ->
   case file:open(Filename, [read, raw, binary, compressed]) of
-    {ok, FD} -> mk_streamf(mk_reader(FD));
-    {error, R} -> error({open_error, R, Filename})
+      {ok, FD} -> mk_streamf(mk_reader(FD));
+      {error, R} -> error({open_error, R, Filename})
   end.
 
 mk_reader(FD) ->
