@@ -1,40 +1,56 @@
-%% -*- mode: erlang; erlang-indent-level: 4 -*-
 -module(fatpage).
 
 -export(
-   [go/1]).
+   [file/2,
+    string/2]).
+-export(
+   [literal/3,
+    repeat/5,
+    sequence/3,
+    alternative/3]).
 
-%ex() -> [{repeat, 1, 2, {sequence, [$A, {$B,$C}, {alternative, [$E, $G]}]}}].
-% matches "AB", "AC", "ABAB", "ABAC", "ACAB", "ACAC"
+file(Filename, F) ->
+    case file:read_file(Filename) of
+        {ok, B} -> string(B, F);
+        {error, R} -> error({unreadable, R})
+    end.
 
-go(B) ->
+string(L, F) when is_list(L) -> string(list_to_binary(L), F);
+string(B, _) when not is_binary(B) -> error({badarg, not_a_string});
+string(B, F) ->
     Z = byte_size(B),
-    case s1(0, B) of
+    case F(0, B) of
         {ok, Xs, Z} -> {ok, Xs, 0};
         {ok, Xs, P} -> {ok, Xs, Z-P};
         {error, R, Z} -> {error, R, eof};
         {error, R, P} -> {error, R, P}
     end.
 
-literal(C, Ptr, B) ->
-    Z = byte_size(C),
+literal(Bin, Ptr, B) when is_binary(Bin) ->
+    Z = byte_size(Bin),
     try binary:part(B, {Ptr, Z}) of
-        C -> {ok, C, Ptr+Z};
-        E -> {error, {miss, E, C}, Ptr}
+        Bin -> {ok, Bin, Ptr+Z};
+        E -> {error, {miss, E, Bin}, Ptr}
     catch
-        error:badarg -> {error, {miss, eof, C}, Ptr}
-    end.
-
-literal(C1, C2, Ptr, B) ->
+        error:badarg -> {error, {miss, eof, Bin}, Ptr}
+    end;
+literal({Bin1, Bin2}, Ptr, B) ->
     try binary:part(B, {Ptr, 1}) of
-        C when C1 =< C, C =< C2 -> {ok, C, Ptr+1};
-        E -> {error, {miss, E, C1, C2}, Ptr}
+        Bin when Bin1 =< Bin, Bin =< Bin2 -> {ok, Bin, Ptr+1};
+        E -> {error, {miss, E, Bin1, Bin2}, Ptr}
     catch
-        error:badarg -> {error, {miss, eof, C1, C2}, Ptr}
+        error:badarg -> {error, {miss, eof, Bin1, Bin2}, Ptr}
+    end;
+literal(GUARD, Ptr, B) when is_function(GUARD, 1) ->
+    try GUARD(C = binary:part(B, {Ptr, 1})) of
+        true -> {ok, C, Ptr+1};
+        false -> {error, {miss, C}, Ptr}
+    catch
+        error:badarg -> {error, {miss, eof}, Ptr}
     end.
 
 repeat(Min, Max, F, Ptr, B) ->
-    repeat(0, Min, Max-1, F, Ptr, B, []).
+    repeat(0, Min, minus1(Max), F, Ptr, B, []).
 
 repeat(N, Min, Mx, F, Ptr, B, Xs) ->
     case F(Ptr, B) of
@@ -43,6 +59,9 @@ repeat(N, Min, Mx, F, Ptr, B, Xs) ->
         {error, R, P} when N < Min -> {error, {too_few, R}, P};
         {error, _R, _P}            -> {ok, lists:reverse(Xs), Ptr}
     end.
+
+minus1(infinity) -> infinity;
+minus1(I) -> I-1.
 
 sequence(Fs, Ptr, B) -> 
     sequence(Fs, Ptr, B, []).
@@ -64,24 +83,3 @@ alternative([F|Fs], Ptr, B, Es) ->
         {ok, X, P} -> {ok, X, P};
         {error, R, P} -> alternative(Fs, Ptr, B, [{R, P}|Es])
     end.
-
-s1(Ptr, B) ->
-    repeat(1, 2, fun s2/2, Ptr, B).
-
-s2(Ptr, B) ->
-    sequence([fun s3/2, fun s4/2, fun s5/2], Ptr, B).
-
-s3(Ptr, B) ->
-    literal(<<"A">>, Ptr, B).
-
-s4(Ptr, B) ->
-    literal(<<"B">>, <<"C">>, Ptr, B).
-
-s5(Ptr, B) ->
-    alternative([fun s6/2, fun s7/2], Ptr, B).
-
-s6(Ptr, B) ->
-    literal(<<"E">>, Ptr, B).
-
-s7(Ptr, B) ->
-    literal(<<"G">>, Ptr, B).
