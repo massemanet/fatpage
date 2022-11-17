@@ -1,6 +1,8 @@
-file        = record *eol-record [EOL]        : [_YY1|_YY2].
+file        = record *eol-record *eol         : [_YY1|_YY2].
 
-eol-record  = EOL record                      : _YY2.
+eol-record  = eol record                      : _YY2.
+
+eol         = CRLF / EOLC
 
 record      = field *comma-field              : [_YY1|_YY2].
 
@@ -12,11 +14,11 @@ escaped     = DQUOTE *qchar DQUOTE            : _YY2.
 
 non-escaped = *TEXTDATA                       : _YY.
 
-qchar       = DQCHAR / SQCHAR                 : _YY.
+qchar       = DQCHAR / NQCHAR                 : _YY.
 
 DQCHAR      = %x22 %x22                       : _YY1.
 
-SQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E : _YY.
+NQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E : _YY.
 
 TEXTDATA    = %x20-21 / %x23-2B / %x2D-7E     : _YY.
 
@@ -24,4 +26,6 @@ COMMA       = %x2C
 
 DQUOTE      = %x22
 
-EOL         = %x0D %x0A / %x0D / %x0A
+EOLC        = %x0D / %x0A
+
+CRLF        = %x0D %x0A
