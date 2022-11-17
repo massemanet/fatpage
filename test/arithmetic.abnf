@@ -1,0 +1,18 @@
+expression = "(" expression ")" / operation / value : _YY.
+
+; operation  = expression operator expression : _YY.
+
+; operation  = "(" expression ")" operator expression / operation operator expression / value operator expression : _YY.
+
+operation  = "(" expression ")" operator expression *op / value operator expression *op : _YY.
+
+op =  operator expression : _YY.
+
+operator   = "+" / "-" / "*" / "/" : _YY.
+
+value      = "0" / nzdigit *digit : _YY.
+
+digit      = "0" / nzdigit : _YY.
+
+nzdigit    = "1" / "2" / "3" / "4" / "5" / "6" / "7" / "8" / "9" : _YY.
+
