@@ -1,31 +1,38 @@
-file        = record *eol-record *eol         : [_YY1|_YY2].
+file        = *record-eol
 
-eol-record  = eol record                      : _YY2.
+record-eol  = record eol                      : Y1.
 
-eol         = CRLF / EOLC
+eol         = CR / LF / CRLF
 
-record      = field *comma-field              : [_YY1|_YY2].
+record      = field *comma-field              : [Y1|Y2].
 
-comma-field = COMMA field                     : _YY2.
+comma-field = COMMA field                     : Y2.
 
-field       = escaped / non-escaped           : _YY.
+field       = quoted / UQTEXTs
 
-escaped     = DQUOTE *qchar DQUOTE            : _YY2.
+quoted      = *WS DQUOTE QTEXTs DQUOTE *WS    : Y3.
 
-non-escaped = *TEXTDATA                       : _YY.
+QTEXTs      = *QTEXT                          : merge(Y).
 
-qchar       = DQCHAR / NQCHAR                 : _YY.
+QTEXT       = UQTEXT / COMMA
 
-DQCHAR      = %x22 %x22                       : _YY1.
+UQTEXTs     = *UQTEXT                         : merge(Y).
 
-NQCHAR      = %x0A / %x0D / %x20-21 / %x23-7E : _YY.
+UQTEXT      = UNICODEISH / WS / DOUBLEDQ
 
-TEXTDATA    = %x20-21 / %x23-2B / %x2D-7E     : _YY.
+DOUBLEDQ    = DQUOTE DQUOTE                   : Y1.
 
-COMMA       = %x2C
+CRLF        = CR LF
+
+CR          = %x0A
+
+LF          = %x0D
+
+WS          = %x09 / %x20
 
 DQUOTE      = %x22
 
-EOLC        = %x0D / %x0A
+COMMA       = %x2C
 
-CRLF        = %x0D %x0A
+UNICODEISH  = %x21 / %x23-2B / %x2D-7E / %x80-7FF / %x800-FFFF / %x10000-10FFFF
+

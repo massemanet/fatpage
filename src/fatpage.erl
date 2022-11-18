@@ -7,7 +7,8 @@
    [literal/3,
     repeat/5,
     sequence/3,
-    alternative/3]).
+    alternative/3,
+    merge/1]).
 
 file(Filename, F) ->
     case file:read_file(Filename) of
@@ -62,6 +63,10 @@ repeat(N, Min, Mx, F, Ptr, B, Xs) ->
 
 minus1(infinity) -> infinity;
 minus1(I) -> I-1.
+
+merge([]) -> [];
+merge(Xs) when is_binary(hd(Xs)) -> binary:list_to_bin(Xs);
+merge(Xs) when is_list(hd(Xs)) -> lists:append(Xs).
 
 sequence(Fs, Ptr, B) -> 
     sequence(Fs, Ptr, B, []).
