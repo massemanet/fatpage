@@ -8,15 +8,11 @@ record      = field *comma-field              : [Y1|Y2].
 
 comma-field = COMMA field                     : Y2.
 
-field       = quoted / UQTEXTs
+field       = quoted / unquoted
 
-quoted      = *WS DQUOTE QTEXTs DQUOTE *WS    : Y3.
+quoted      = *WS DQUOTE *(UQTEXT / COMMA) DQUOTE *WS    : merge(Y3).
 
-QTEXTs      = *QTEXT                          : merge(Y).
-
-QTEXT       = UQTEXT / COMMA
-
-UQTEXTs     = *UQTEXT                         : merge(Y).
+unquoted    = *UQTEXT                         : merge(Y).
 
 UQTEXT      = UNICODEISH / WS / DOUBLEDQ
 
@@ -35,4 +31,3 @@ DQUOTE      = %x22
 COMMA       = %x2C
 
 UNICODEISH  = %x21 / %x23-2B / %x2D-7E / %x80-7FF / %x800-FFFF / %x10000-10FFFF
-

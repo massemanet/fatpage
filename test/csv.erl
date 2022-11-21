@@ -15,9 +15,6 @@ string(String) -> fatpage:string(String, fun '_file'/2).
 -define(DBG(P, B), erlang:display({?FUNCTION_NAME, try binary:part(B,{P,1}) catch _:_ -> eof end})).
 
 '_file'(Ptr, B) ->
-    '_record-eols'(Ptr, B).
-
-'_record-eols'(Ptr, B) ->
     fatpage:repeat(0, infinity, fun '_record-eol'/2, Ptr, B).
 
 '_record-eol'(Ptr, B) ->
