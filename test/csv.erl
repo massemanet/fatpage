@@ -23,14 +23,14 @@ string(String) -> fatpage:string(String, fun '_file'/2).
         Err -> Err
     end.
 
-'_eol'(Ptr, B) ->
-    fatpage:alternative([fun '_CR'/2, fun '_LF'/2, fun '_CRLF'/2], Ptr, B).
-
 '_record'(Ptr, B) ->
     case fatpage:sequence([fun '_field'/2, fun '_comma_fields'/2], Ptr, B) of
         {ok, [Y1, Y2], P} -> {ok, [Y1|Y2], P};
         Err -> Err
     end.
+
+'_eol'(Ptr, B) ->
+    fatpage:alternative([fun '_CR'/2, fun '_LF'/2, fun '_CRLF'/2], Ptr, B).
 
 '_comma_fields'(Ptr, B) ->
     fatpage:repeat(0, infinity, fun '_comma-field'/2, Ptr, B).
