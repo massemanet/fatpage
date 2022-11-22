@@ -17,19 +17,21 @@ parse(Filename) ->
     lists:map(fun reify/1, Rules).
 
 -define(DERIV(Type, X, Ds), {deriv, Type, X, Ds}).
--define(DERIV_TYPE(T), {deriv, T, _, _}).
--define(DERIV_DERIVS(Ds), {deriv, _, _, Ds}).
+-define(DERIV_TYPE(T), ?DERIV(T, _, _)).
+-define(DERIV_DERIVS(Ds), ?DERIV(_, _, Ds)).
 -define(RULE(Name, Code, Deriv), {rule, Name, Deriv, Code}).
--define(RULE_NAME(N), {rule, N, _, _}).
--define(RULE_DERIV(D), {rule, _, D, _}).
+-define(RULE_NAME(N), ?RULE(N, _, _)).
+-define(RULE_DERIV(D), ?RULE(_, D, _)).
 
 reify({rule, def_rule, Name, Deriv, Code}) -> ?RULE(Name, Code, reify(Deriv));
 reify(?DERIV(_, _, _) = D) -> D;
 reify({rulename, Name})           -> ?DERIV(appl, {}, Name);
 reify({alt, Alts})                -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
+reify({char_alt, Alts})           -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
 reify({seq, Seqs})                -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
+reify({char_seq, Seqs})           -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
 reify({repeat, Min, Max, Rep})    -> ?DERIV(rep, {Min, Max}, reify(Rep));
-reify({char_val, Char})           -> ?DERIV(char, {}, Char);
+reify({char_val, Char})           -> ?DERIV(char, {}, {Char});
 reify({char_range, Char1, Char2}) -> ?DERIV(char, {}, {Char1, Char2}).
 
 %% unroll nested rules
@@ -43,19 +45,21 @@ unroll([Rule|Rules], Orules) ->
 
 expand_rule(Rule) ->
     ?RULE(Name, Code, Deriv) = Rule,
-    ?DERIV(Type, _, Derivs) = Deriv,
+    ?DERIV(Type, _, _) = Deriv,
     case is_all_final(Deriv) of
         true -> Rule;
         false ->
-            {NewDerivs, NewRules} = finalize(Derivs),
+            {NewDerivs, NewRules} = finalize(Deriv),
             [?RULE(Name, Code, ?DERIV(Type, {}, NewDerivs))|NewRules]
     end.
 
+is_all_final(Derivs) when is_list(Derivs) ->
+    lists:all(fun is_all_final/1, Derivs);
 is_all_final(?DERIV(Type, _, Ds)) ->
     case Type of
         appl -> true;
         char -> true;
-        rep -> is_final(Type);
+        rep -> is_final(Ds);
         alt -> lists:all(fun is_final/1, Ds);
         seq -> lists:all(fun is_final/1, Ds)
     end.
@@ -63,8 +67,8 @@ is_all_final(?DERIV(Type, _, Ds)) ->
 is_final(?DERIV(T, _, _)) -> is_final(T);
 is_final(T) -> not lists:member(T, [alt, seq, rep]).
 
-finalize(Derivs) when is_list(Derivs) ->
-    lists:foldl(fun finalize/2, {[], []}, Derivs);
+finalize(?DERIV(Type, _, Ds)) when Type == seq; Type == alt ->
+    lists:foldl(fun finalize/2, {[], []}, Ds);
 finalize(?DERIV_TYPE(rep) = ?DERIV_DERIVS(Ds)) ->
     finalize(Ds, {[], []});
 finalize(Deriv) ->
@@ -73,11 +77,24 @@ finalize(Deriv) ->
 finalize(Deriv, {Derivs, Rules}) ->
     case is_final(Deriv) of
         true ->
-            {[Deriv|Derivs], Rules};
+            {append_thing(Deriv, Derivs), Rules};
         false ->
-            Name = get_name(Deriv),
-            {[?DERIV(appl, {}, Name)|Derivs], [?RULE(Name, nocode, Deriv)|Rules]}
+            case get_name(Deriv) of
+                {new, Name} ->
+                    {append_deriv(appl, Name, Derivs), append_rule(Name, Deriv, Rules)};
+                {old, Name} ->
+                    {append_deriv(appl, Name, Derivs), []}
+            end
     end.
+
+append_deriv(appl, Name, Derivs) ->
+    append_thing(?DERIV(appl, {}, Name), Derivs).
+
+append_rule(Name, Deriv, Rules) ->
+    append_thing(?RULE(Name, nocode, Deriv), Rules).
+
+append_thing(T, Ts) ->
+    Ts++[T].
 
 get_name(Deriv) ->
     case get(fatpage) of
@@ -85,13 +102,13 @@ get_name(Deriv) ->
             put(fatpage, #{}),
             get_name(Deriv);
         #{{deriv, Deriv} := Id} ->
-            make_name(Id);
+            {old, make_name(Id)};
         #{id := Id} = Fatpage ->
             put(fatpage, Fatpage#{id => Id+1, {deriv, Deriv} => Id}),
-            make_name(Id);
+            {new, make_name(Id)};
         Fatpage ->
             put(fatpage, Fatpage#{id => 1, {deriv, Deriv} => 0}),
-            make_name(0)
+            {new, make_name(0)}
     end.
 
 make_name(I) ->
