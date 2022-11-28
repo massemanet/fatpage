@@ -4,13 +4,17 @@
          unroll/1,
          left_recursive/1,
          forms/1,
-         pp/1]).
+         pp/1,
+         display/1]).
+
+display(Filename) ->
+    io:fwrite("~s~n", [pp(Filename)]).
 
 pp(Filename) ->
-    lists:flatten([erl_pp:form(Form) || Form <- forms(Filename)]).
+    lists:flatmap(fun(F) -> try erl_prettypr:format(F)++[10] catch C:R -> erlang:display({C, R, F}),"\n :( \n" end end, forms(Filename)).
 
 forms(Filename) ->
-    gen_forms(unroll(Filename)).
+    gen_forms(mod(Filename), unroll(Filename)).
 
 left_recursive(Filename) ->
     fixpoint({unroll(Filename), []}).
@@ -30,22 +34,23 @@ parse(Filename) ->
 %% rewrite bootstrap parser output to internal form
 reify({rule, def_rule, Name, Deriv, Code}) -> ?RULE(Name, Code, reify(Deriv));
 reify(?DERIV(_, _, _) = D) -> D;
-reify({rulename, Name})           -> ?DERIV(appl, {}, Name);
+reify({rulename, Name})           -> ?DERIV(final, appl, Name);
 reify({alt, Alts})                -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
 reify({char_alt, Alts})           -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
 reify({seq, Seqs})                -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
 reify({char_seq, Seqs})           -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
 reify({repeat, Min, Max, Rep})    -> ?DERIV(rep, {Min, Max}, reify(Rep));
-reify({char_val, Char})           -> ?DERIV(char, {}, {Char});
-reify({char_range, Char1, Char2}) -> ?DERIV(char, {}, {Char1, Char2}).
+reify({char_val, Char})           -> ?DERIV(final, char, {Char});
+reify({char_range, Char1, Char2}) -> ?DERIV(final, char, {Char1, Char2}).
 
 %% unroll nested rules
 unroll([], Orules) ->
     lists:reverse(Orules);
 unroll([Rule|Rules], Orules) ->
-    case expand_rule(Rule) of
+    try expand_rule(Rule) of
         Rule -> unroll(Rules, [Rule|Orules]);
         NewRules -> unroll(NewRules++Rules, Orules)
+    catch C:R:S -> error({C, R, Rule, S})
     end.
 
 expand_rule(Rule) ->
@@ -59,24 +64,22 @@ expand_rule(Rule) ->
             [?RULE(Name, Code, ?DERIV(Type, X, NewDerivs))|NewRules]
     end.
 
-is_all_final(Derivs) when is_list(Derivs) ->
-    lists:all(fun is_all_final/1, Derivs);
 is_all_final(?DERIV(Type, _, Ds)) ->
     case Type of
-        appl -> true;
-        char -> true;
+        final -> true;
         rep -> is_final(Ds);
         alt -> lists:all(fun is_final/1, Ds);
         seq -> lists:all(fun is_final/1, Ds)
     end.
 
 is_final(?DERIV(T, _, _)) -> is_final(T);
-is_final(T) -> not lists:member(T, [alt, seq, rep]).
+is_final(T) when is_atom(T) -> final == T.
 
 finalize(?DERIV(Type, _, Ds)) when Type == seq; Type == alt ->
     lists:foldl(fun finalize/2, {[], []}, Ds);
 finalize(?DERIV(rep, _, Ds)) ->
-    finalize(Ds, {[], []});
+    {[D], Rs} = finalize(Ds, {[], []}),
+    {D, Rs};
 finalize(Deriv) ->
     {Deriv, []}.
 
@@ -97,7 +100,7 @@ rewrite_deriv(Deriv, Derivs, Rules) ->
     end.
 
 append_deriv(appl, Name, Derivs) ->
-    append_thing(?DERIV(appl, {}, Name), Derivs).
+    append_thing(?DERIV(final, appl, Name), Derivs).
 
 append_rule(Name, Deriv, Rules) ->
     append_thing(?RULE(Name, nocode, Deriv), Rules).
@@ -126,92 +129,16 @@ make_name(I) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% code gen
 
-gen_forms(Rules) ->
+mod(Filename) ->
+    filename:basename(Filename, ".abnf").
+
+gen_forms(Mod, Rules) ->
     {Forms, _} = lists:mapfoldl(fun template/2, 1, Rules),
-    Forms.
+    FirstRule = erl_syntax:atom_value(erl_syntax:function_name(hd(Forms))),
+    fatpage_g:preamble(Mod, FirstRule)++Forms.
 
-template(?RULE(Name, Code, SubDeriv), Num) ->
-    {template(Num, rule, Name, SubDeriv, Code), Num+1}.
-
-template(Num, rule, Name, ?DERIV(Type, X, SubDeriv), _Code) ->
-    {function, Num, to_atom(Name), 2,
-     [{clause,Num,
-       [{var,Num,'Ptr'}, {var,Num,'B'}],
-       [],
-       [template(Num, Type, X, SubDeriv)]}]}.
-
-template(Num, char, X, D) ->
-    template(Num, final, ?DERIV(char, X, D));
-template(Num, rep, {Min, Max}, Deriv) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,repeat}},
-     [template(Num, integer, Min),
-      template(Num, integer, Max),
-      template(Num, final, Deriv),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]};
-template(Num, alt, {}, Derivs) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,alternative}},
-     [template(Num, list, [template(Num, final, Deriv) || Deriv <- Derivs]),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]};
-template(Num, seq, {}, Derivs) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,sequence}},
-     [template(Num, list, [template(Num, final, Deriv) || Deriv <- Derivs]),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]}.
-
-template(Num, final, ?DERIV(appl, _, Name)) ->
-    {'fun',Num,{function,to_atom(Name),2}};
-template(Num, final, ?DERIV(char, _, Cs)) when is_list(Cs) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,literal}},
-     [template(Num, cguard, Cs),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]};
-template(Num, final, ?DERIV(char, _, {C})) when is_integer(C) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,literal}},
-     [template(Num, integer, C),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]};
-template(Num, final, ?DERIV(char, _, {C1, C2})) ->
-    {call,Num,
-     {remote,Num,{atom,Num,fatpage},{atom,Num,literal}},
-     [template(Num, integer, C1),
-      template(Num, integer, C2),
-      {var,Num,'Ptr'},
-      {var,Num,'B'}]};
-template(Num, cguard, Cs) ->
-    {'fun',Num,
-     {clauses,[{clause,Num,
-                [{var,Num,'I'}],
-                cguards(Num, Cs),
-                [{atom,Num,true}]},
-               {clause,Num,[{var,Num,'_'}],[],[{atom,Num,false}]}]}};
-template(Num, integer, infinity) ->
-    {atom, Num, infinity};
-template(Num, integer, I) when is_integer(I) ->
-    {integer, Num, I};
-template(Num, list, L) ->
-    lists:foldr(fun(E, O) -> {cons, Num, E, O} end, {nil, Num}, L).
-
-cguards(Num, Cs) ->
-    {Guards, _} = lists:mapfoldl(fun cguard/2, Num, Cs),
-    Guards.
-
-cguard({C}, Num) when is_integer(C) ->
-    {op,Num,'==',{char,Num,C},{var,Num,'I'}};
-cguard({C1, C2}, Num) when is_integer(C1), is_integer(C2) ->
-    [{op,Num,'=<',{char,Num,C1},{var,Num,'I'}},
-     {op,Num,'=<',{var,Num,'I'},{char,Num,C2}}].
-
-to_atom(L) when is_list(L) -> list_to_atom(L);
-to_atom(B) when is_binary(B) -> binary_to_atom(B);
-to_atom(A) when is_atom(A) -> A.
-
+template(?RULE(Name, Code, ?DERIV(Type, X, SubDeriv)), Num) ->
+    {fatpage_g:rule(Num, Name, Code, Type, X, SubDeriv), Num+1}.
 
 %% we go through the list of rules and rewrite them (to
 %% 'nullable'/'non_nullable') until fixpoint. If the resulting list of
