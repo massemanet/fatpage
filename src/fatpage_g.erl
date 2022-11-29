@@ -17,12 +17,10 @@ rule(Line, Name, Code, Type, X, Sub) ->
     stx(set_pos, {rule(Name, Code, Type, X, Sub), Line}).
 
 rule(Name, Code, Type, X, Sub) ->
-    case Code of
-        nocode ->
-            stx(func, {Name, ptr_b(), [], [fcall(Type, X, Sub)]});
-        Code ->
-            stx(func, {Name, ptr_b(), [], [fcase(Code, Type, X, Sub)]})
-    end.
+    stx(func, {Name, ptr_b(), [], [rule_body(Code, Type, X, Sub)]}).
+
+rule_body(nocode, Type, X, Sub) -> fcall(Type, X, Sub);
+rule_body(Code, Type, X, Sub) -> fcase(Code, Type, X, Sub).
 
 fcase(Code, Type, X, Deriv) ->
     Nbindings = nbindings(Type, Deriv),
@@ -44,7 +42,7 @@ ptr_b() ->
     [stx('Ptr'), stx('B')].
 
 fclause({ok, Nbindings, Code}) ->
-    stx(clause, {[stx(tuple, [stx(ok), stx(list, bindings(Nbindings, Code))])], [], Code});
+    stx(clause, {[stx(tuple, [stx(ok), bindings(Nbindings, Code)])], [], Code});
 fclause({err, V}) ->
     Var = stx(V),
     stx(clause, {[Var], [], [Var]}).
@@ -56,16 +54,17 @@ nbindings(seq, Derivs) -> length(Derivs).
 bindings(Nbindings, Code) ->
     BoundVars = bound_vars(Code),
     AvailVars = avail_vars(Nbindings),
-    case BoundVars -- AvailVars of
-        [] -> [match_vars(V, BoundVars) || V <- AvailVars];
+    Wild = stx('Y'),
+    case {BoundVars -- [Wild], BoundVars -- AvailVars} of
+        {[], [Wild]} -> Wild;
+        {BoundVars, []} -> match_vars(BoundVars, AvailVars);
+        {BoundVars, [Wild]} -> stx(eq, {match_vars(BoundVars, AvailVars), Wild});
         Err -> error({unknown_vars, Err})
     end.
 
 bound_vars(Code) ->
     lists:usort(bound_vars(Code, [])).
 
-bound_vars({var, X, 'Y'}, Vs) ->
-    bound_vars({var, X, 'Y0'}, Vs);
 bound_vars({var, _, V}, Vs) ->
     [stx(V)|Vs];
 bound_vars(L, Vs) when is_list(L) ->
@@ -76,12 +75,15 @@ bound_vars(_, Vs) ->
     Vs.
 
 avail_vars(N) ->
-    [match_var(I) || I <- lists:seq(0, N)].
+    [match_var(I) || I <- lists:seq(1, N)].
 
 match_var(I) ->
     stx("Y"++integer_to_list(I)).
 
-match_vars(V, Vs) ->    
+match_vars(BoundVars, AvailVars) ->
+    stx(list, [match_var(V, BoundVars) || V <- AvailVars]).
+
+match_var(V, Vs) ->    
     case lists:member(V, Vs) of
         true -> V;
         false -> stx('_')
@@ -132,6 +134,7 @@ stx(tuple, L) when is_list(L) -> erl_syntax:tuple(L);
 stx(call, {F, Args}) -> erl_syntax:application(stx(F), Args);
 stx(call, {M, F, Args}) -> erl_syntax:application(erl_syntax:module_qualifier(stx(M), stx(F)), Args);
 stx(case_, {Arg, Clauses}) -> erl_syntax:case_expr(Arg, Clauses);
+stx(eq, {L, R}) -> erl_syntax:match_expr(L, R);
 stx(fun_, Cs) -> erl_syntax:fun_expr(stx(clauses, Cs));
 stx(infix, {Left, Op, Right}) -> erl_syntax:infix_expr(Left, stx(op, Op), Right);
 stx(var, V) -> erl_syntax:variable(V);
@@ -141,7 +144,7 @@ stx(attr, {N, As}) -> erl_syntax:attribute(stx(N), As);
 stx(clause, {Args, Guard, Body}) ->  erl_syntax:clause(Args, Guard, Body);
 stx(clauses, Cs) -> [stx(clause, {Args, G, Body}) || {Args, G, Body} <- Cs];
 stx(fa, {N, A}) -> erl_syntax:arity_qualifier(stx(N), stx(A));
-stx(func, {Name, Clauses}) when is_list(Clauses)-> erl_syntax:function(stx(Name), Clauses);
+stx(func, {Name, Clauses}) when is_list(Clauses)-> erl_syntax:function(stx(atom, Name), Clauses);
 stx(func, {Name, Args, G, Body}) -> stx(func, {Name, stx(clauses, [{Args, G, Body}])});
 stx(implicit_fun, {N, A}) -> erl_syntax:implicit_fun(stx(fa, {N, A}));
 stx(op, Op) -> erl_syntax:operator(Op);

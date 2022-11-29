@@ -7,11 +7,13 @@
          pp/1,
          display/1]).
 
+-define(DBG(E), try (E) catch C:R -> erlang:display({C, R, F}),"\n :( \n" end).
+
 display(Filename) ->
-    io:fwrite("~s~n", [pp(Filename)]).
+    io:fwrite("~s", [pp(Filename)]).
 
 pp(Filename) ->
-    lists:flatmap(fun(F) -> try erl_prettypr:format(F)++[10] catch C:R -> erlang:display({C, R, F}),"\n :( \n" end end, forms(Filename)).
+    lists:flatmap(fun ppf/1, forms(Filename)).
 
 forms(Filename) ->
     gen_forms(mod(Filename), unroll(Filename)).
@@ -125,6 +127,12 @@ get_name(Deriv) ->
 
 make_name(I) ->
     lists:flatten(io_lib:format("-virtual-~p-", [I])).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% prettyprinter
+
+ppf(F) ->
+    ?DBG(erl_prettypr:format(F, [{paper, 100}, {ribbon, 200}])++[10, 10]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% code gen
