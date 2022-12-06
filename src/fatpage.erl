@@ -26,7 +26,7 @@ erl(Filename) ->
     OutFile.
 
 pp(Filename) ->
-    fatpage_gen:pp(forms(Filename)).
+    fatpage_gen:pp(forms(Filename), Filename).
 
 forms(Filename) ->
     fatpage_gen:forms(mod(Filename), unroll(Filename)).
