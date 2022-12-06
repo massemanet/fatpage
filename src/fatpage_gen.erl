@@ -1,47 +1,29 @@
 -module(fatpage_gen).
 
--export([parse/1,
-         unroll/1,
-         left_recursive/1,
-         forms/1,
-         pp/1,
-         erl/1,
-         display/1,
-         beam/1]).
+-export(
+   [parse/1,
+    unroll/1,
+    left_recursive/1,
+    forms/2,
+    pp/1]).
 
 -define(DBG(E), try (E) catch C:R -> erlang:display({C, R, F}),"\n :( \n" end).
 
-beam(Filename) ->
-    OutFile = out_file(Filename, beam),
-    {ok, _Mod, Beam} = compile:forms(forms(Filename)),
-    file:write_file(OutFile, Beam),
-    OutFile.
+pp(Forms) ->
+    lists:flatmap(fun ppf/1, Forms).
 
-display(Filename) ->
-    io:fwrite("~s", [pp(Filename)]).
+forms(Mod, Rules) ->
+    gen_forms(Mod, Rules).
 
-erl(Filename) ->
-    OutFile = out_file(Filename, erl),
-    Erl = pp(Filename),
-    write_file(OutFile, Erl),
-    OutFile.
+left_recursive(Rules) ->
+    fixpoint({Rules, []}).
 
-pp(Filename) ->
-    lists:flatmap(fun ppf/1, forms(Filename)).
-
-forms(Filename) ->
-    gen_forms(mod(Filename), unroll(Filename)).
-
-left_recursive(Filename) ->
-    fixpoint({unroll(Filename), []}).
-
-unroll(Filename) ->
+unroll(Rules) ->
     erase(fatpage),
-    unroll(parse(Filename), []).
+    unroll(Rules, []).
 
-parse(Filename) ->
-    {ok, B} = file:read_file(Filename),
-    {rulelist, _, Rules} = abnfc:parse(binary_to_list(B), []),
+parse(String) when is_list(String) ->
+    {rulelist, _, Rules} = abnfc:parse(String, []),
     lists:map(fun reify/1, Rules).
 
 -define(DERIV(Type, X, Ds), {deriv, Type, X, Ds}).
@@ -142,6 +124,9 @@ get_name(Deriv) ->
 make_name(I) ->
     flat("-virtual-~p-", [I]).
 
+flat(F, As) ->
+    lists:flatten(io_lib:format(F, As)).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% prettyprinter
 
@@ -150,9 +135,6 @@ ppf(F) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% code gen
-
-mod(Filename) ->
-    filename:basename(Filename, ".abnf").
 
 gen_forms(Mod, Rules) ->
     Forms = fatpage_g:forms(Mod, Rules),
@@ -282,20 +264,3 @@ all_non_nullable(L) ->
 
 any_nullable(L) ->
     lists:any(fun(V) -> V == nullable end, L).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% generate beam and rite .beam file
-
-out_file(Filename, Ext) ->
-    Dir = filename:dirname(Filename),
-    Base = filename:basename(Filename, ".abnf"),
-    flat("~s/~s.~s", [Dir, Base, Ext]).
-
-flat(F, As) ->
-    lists:flatten(io_lib:format(F, As)).
-
-write_file(OutFile, String) ->
-    {ok, FD} = file:open(OutFile, [write]),
-    io:fwrite(FD, "~s", [String]),
-    file:close(FD).
-
