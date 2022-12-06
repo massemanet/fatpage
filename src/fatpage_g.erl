@@ -27,10 +27,11 @@ rule(#rule{name=Name, code=Code, deriv=#deriv{type=Type, x=X, ds=SubDeriv}}, Num
 header(Mod, Entry) ->
     IF = stx(rule_fun, Entry),
     FN = stx('Filename'),
+    ST = stx('String'),
     [stx(attr, {module, [stx(Mod)]}),
      stx(attr, {export, [stx(list, [stx(fa, {file, 1}), stx(fa, {string, 1})])]}),
      stx(func, {file, [FN], [], [stx(call, {file, [FN, IF]})]}),
-     stx(func, {string, [FN], [], [stx(call, {string, [FN, IF]})]})].
+     stx(func, {string, [ST], [], [stx(call, {string, [ST, IF]})]})].
 
 rule(Line, Name, Code, Type, X, Sub) ->
     stx(set_pos, {rule(Name, Code, Type, X, Sub), Line}).
@@ -120,20 +121,10 @@ final(#deriv{type=final, x=char, ds={C1, C2}}) -> cfun([{C1, C2}]);
 final(#deriv{type=final, x=char, ds=C0}) -> cfun([C0]);
 final(#deriv{type=final, x=appl, ds=Name}) -> stx(rule_fun, Name).
 
-cfun(Cs) ->
-    stx(fun_,
-        [{[stx(bin, ['I'])], cguard(Cs), [stx(true)]},
-         {[stx('_')], [], [stx(false)]}]).
-
-cguard(Cs) ->
-    Var = stx('I'),
-    [cop(Var, C) || C <- Cs].
-
-cop(Var, {C1, C2}) ->
-    [stx(infix, {stx(C1), '=<', Var}),
-     stx(infix, {Var, '=<', stx(C2)})];
-cop(Var, {C0}) when is_integer(C0)->
-    [stx(infix, {stx(C0), '=:=', Var})].
+cfun([{C0}]) ->
+    stx(fun_, [{[stx('O')], [], [stx(call, {final, [stx(C0), stx('O')]})]}]);
+cfun([{C1, C2}]) ->
+    stx(fun_, [{[stx('O')], [], [stx(call, {final, [stx(C1), stx(C2), stx('O')]})]}]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Syntax manipulation
