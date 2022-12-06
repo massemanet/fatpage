@@ -1,0 +1,9 @@
+file           = *unicodeish-eol
+
+unicodeish-eol = runicodeish eol : Y1.
+
+runicodeish    = *unicodeish
+
+eol            = CR / EOF
+
+unicodeish     = %x21 / %x23-2B / %x2D-7E / %x80-7FF / %x800-FFFF / %x10000-10FFFF

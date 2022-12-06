@@ -2,22 +2,41 @@
 -module(fatpage_g).
 
 -export(
-   [preamble/2,
-    rule/6]).
+   [fold_forms/3,
+    forms/2]).
 
-preamble(Mod, Entry) ->
-    VF = stx('Filename'),
-    VI = stx(implicit_fun, {Entry, 2}),
+
+-record(rule, {name, deriv, code}).
+-record(deriv, {type, x, ds}).
+
+fold_forms(F, Acc0, Forms) ->
+    lists:flatmap(fun(Form) -> fold_form(F, Acc0, Form) end, Forms).
+
+fold_form(F, Acc0, Form) ->
+    stx(rev, stx(fold, {F, Acc0, Form})).
+
+forms(Mod, Rules) ->
+    {Forms, _} = lists:mapfoldl(fun rule/2, 1, Rules),
+    #rule{name=FirstRule} = hd(Rules),
+    Header = header(Mod, FirstRule),
+    stx(revert, Header++Forms).
+
+rule(#rule{name=Name, code=Code, deriv=#deriv{type=Type, x=X, ds=SubDeriv}}, Num) ->
+    {rule(Num, Name, Code, Type, X, SubDeriv), Num+1}.
+
+header(Mod, Entry) ->
+    IF = stx(rule_fun, Entry),
+    FN = stx('Filename'),
     [stx(attr, {module, [stx(Mod)]}),
-     stx(attr, {export, [stx(fa, {file, 1}), stx(fa, {string, 1})]}),
-     stx(func, {file, [VF], [], [stx(call, {fatpage, file, [VF, VI]})]}),
-     stx(func, {string, [VF], [], [stx(call, {fatpage, string, [VF, VI]})]})].
+     stx(attr, {export, [stx(list, [stx(fa, {file, 1}), stx(fa, {string, 1})])]}),
+     stx(func, {file, [FN], [], [stx(call, {file, [FN, IF]})]}),
+     stx(func, {string, [FN], [], [stx(call, {string, [FN, IF]})]})].
 
 rule(Line, Name, Code, Type, X, Sub) ->
     stx(set_pos, {rule(Name, Code, Type, X, Sub), Line}).
 
 rule(Name, Code, Type, X, Sub) ->
-    stx(func, {Name, ptr_b(), [], [rule_body(Code, Type, X, Sub)]}).
+    stx(func, {stx(rule, Name), [stx('Obj')], [], [rule_body(Code, Type, X, Sub)]}).
 
 rule_body(nocode, Type, X, Sub) -> fcall(Type, X, Sub);
 rule_body(Code, Type, X, Sub) -> fcase(Code, Type, X, Sub).
@@ -28,21 +47,26 @@ fcase(Code, Type, X, Deriv) ->
 
 -define(DERIV(Type, X, Ds), {deriv, Type, X, Ds}).
 fcall(rep, {Min, Max}, Deriv) ->
-    stx(call, {fatpage, repeat, [stx(Min), stx(Max), final(Deriv)|ptr_b()]});
+    stx(call, {repeat, [stx(Min), stx(Max), final(Deriv), stx('Obj')]});
 fcall(alt, {}, Derivs) ->
-    stx(call, {fatpage, alternative, [finals(Derivs)|ptr_b()]});
+    stx(call, {alternative, [finals(Derivs), stx('Obj')]});
 fcall(seq, {}, Derivs) ->
-    stx(call, {fatpage, sequence, [finals(Derivs)|ptr_b()]});
+    stx(call, {sequence, [finals(Derivs), stx('Obj')]});
 fcall(final, char, Ds) ->
-    stx(call, {fatpage, final, [final(?DERIV(final, char, Ds))|ptr_b()]});
+    stx(call, {final, [final(#deriv{type=final, x=char, ds=Ds}), stx('Obj')]});
 fcall(final, appl, Ds) ->
-    stx(call, {fatpage, final, [final(?DERIV(final, appl, Ds))|ptr_b()]}).
+    stx(call, {final, [final(#deriv{type=final, x=appl, ds=Ds}), stx('Obj')]}).
 
-ptr_b() ->
-    [stx('Ptr'), stx('B')].
-
-fclause({ok, Nbindings, Code}) ->
-    stx(clause, {[stx(tuple, [stx(ok), bindings(Nbindings, Code)])], [], Code});
+fclause({ok, Nbindings, [Code]}) ->
+    Match = stx(tuple, [stx(ok), bindings(Nbindings, Code), stx('O')]),
+    Ret = stx(tuple, [stx(ok), Code, stx('O')]),
+%    Ret = {tree,tuple,
+%           {attr,0,[],none},
+%           [{tree,atom,{attr,0,[],none},ok},
+%            {tree,variable,{attr,0,[],none},'Y1'},
+%            {tree,variable,{attr,0,[],none},'O'}]},
+%    Ret = {tuple,0,[{atom,0,ok},Code,{var,0,'O'}]},
+    stx(clause, {[Match], [], [Ret]});
 fclause({err, V}) ->
     Var = stx(V),
     stx(clause, {[Var], [], [Var]}).
@@ -83,7 +107,7 @@ match_var(I) ->
 match_vars(BoundVars, AvailVars) ->
     stx(list, [match_var(V, BoundVars) || V <- AvailVars]).
 
-match_var(V, Vs) ->    
+match_var(V, Vs) ->
     case lists:member(V, Vs) of
         true -> V;
         false -> stx('_')
@@ -92,13 +116,13 @@ match_var(V, Vs) ->
 finals(Derivs) ->
     stx(list, [final(Deriv) || Deriv <- Derivs]).
 
-final(?DERIV(final, char, {C1, C2})) -> cfun([{C1, C2}]);
-final(?DERIV(final, char, C0)) -> cfun([C0]);
-final(?DERIV(final, appl, Name)) -> stx(implicit_fun, {Name, 2}).
+final(#deriv{type=final, x=char, ds={C1, C2}}) -> cfun([{C1, C2}]);
+final(#deriv{type=final, x=char, ds=C0}) -> cfun([C0]);
+final(#deriv{type=final, x=appl, ds=Name}) -> stx(rule_fun, Name).
 
 cfun(Cs) ->
     stx(fun_,
-        [{[stx('I')], cguard(Cs), [stx(true)]},
+        [{[stx(bin, ['I'])], cguard(Cs), [stx(true)]},
          {[stx('_')], [], [stx(false)]}]).
 
 cguard(Cs) ->
@@ -111,43 +135,92 @@ cop(Var, {C1, C2}) ->
 cop(Var, {C0}) when is_integer(C0)->
     [stx(infix, {stx(C0), '=:=', Var})].
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Syntax manipulation
 
+-define(IS_TREE(T), tree =:= element(1, T)).
+-define(IS_UPC(I), $A =< I, I =< $Z; $_ == I).
+-define(IS_CHAR(I), $ =< I, I =< $~).
 %% auto detect type (for var, int, and atom)
+stx(T) when ?IS_TREE(T) ->
+    T;
 stx(A) when is_atom(A) ->
     stx(atom_to_list(A));
-stx([I|_] = S) when $A =< I, I =< $Z; $_ == I ->
+stx([I|_] = S) when ?IS_UPC(I) ->
     stx(var, S);
-stx([I|_] = S) when $ =< I, I =< $~ ->
+stx([I|_] = S) when ?IS_CHAR(I) ->
     stx(atom, S);
 stx(I) when is_integer(I) ->
     stx(integer, I).
 
+%% aliases
+stx(bin_fields, Vs) ->
+    [stx(bin_field, V) || V <- Vs];
+stx(clauses, Cs) ->
+    [stx(clause, {Args, G, Body}) || {Args, G, Body} <- Cs];
+stx(func, {Name, Args, G, Body}) ->
+    stx(func, {Name, stx(clauses, [{Args, G, Body}])});
+stx(list, L) when is_list(L) ->
+    stx(list, {L, none});
+stx(rule_fun, N) when is_atom(N) ->
+    stx(implicit_fun, {stx(rule, N), 1});
+stx(rule, N) ->
+    [$-|atom_to_list(N)]++"-";
+
 %% primitives
-stx(atom, A) -> erl_syntax:atom(A);
-stx(integer, I) when is_integer(I) -> erl_syntax:integer(I);
-stx(list, {H, T}) when is_list(H) -> erl_syntax:list(H, T);
-stx(list, L) when is_list(L) -> stx(list, {L, none});
-stx(tuple, L) when is_list(L) -> erl_syntax:tuple(L);
+stx(atom, A) ->
+    erl_syntax:atom(A);
+stx(bin, Vs) ->
+    erl_syntax:binary(stx(bin_fields, Vs));
+stx(bin_field, V) ->
+    erl_syntax:binary_field(stx(V));
+stx(integer, I) when is_integer(I) ->
+    erl_syntax:integer(I);
+stx(list, {H, T}) when is_list(H) ->
+    erl_syntax:list(H, T);
+stx(tuple, L) when is_list(L) ->
+    erl_syntax:tuple(L);
 
 %% expressions
-stx(call, {F, Args}) -> erl_syntax:application(stx(F), Args);
-stx(call, {M, F, Args}) -> erl_syntax:application(erl_syntax:module_qualifier(stx(M), stx(F)), Args);
-stx(case_, {Arg, Clauses}) -> erl_syntax:case_expr(Arg, Clauses);
-stx(eq, {L, R}) -> erl_syntax:match_expr(L, R);
-stx(fun_, Cs) -> erl_syntax:fun_expr(stx(clauses, Cs));
-stx(infix, {Left, Op, Right}) -> erl_syntax:infix_expr(Left, stx(op, Op), Right);
-stx(var, V) -> erl_syntax:variable(V);
+stx(call, {F, Args}) ->
+    erl_syntax:application(stx(F), Args);
+stx(call, {M, F, Args}) ->
+    erl_syntax:application(stx(mf, {M, F}), Args);
+stx(case_, {Arg, Clauses}) ->
+    erl_syntax:case_expr(Arg, Clauses);
+stx(eq, {L, R}) ->
+    erl_syntax:match_expr(L, R);
+stx(fun_, Cs) ->
+    erl_syntax:fun_expr(stx(clauses, Cs));
+stx(infix, {Left, Op, Right}) ->
+    erl_syntax:infix_expr(Left, stx(op, Op), Right);
+stx(mf, {M, F}) ->
+    erl_syntax:module_qualifier(stx(M), stx(F));
+stx(var, V) ->
+    erl_syntax:variable(V);
 
 %% syntax elements
-stx(attr, {N, As}) -> erl_syntax:attribute(stx(N), As);
-stx(clause, {Args, Guard, Body}) ->  erl_syntax:clause(Args, Guard, Body);
-stx(clauses, Cs) -> [stx(clause, {Args, G, Body}) || {Args, G, Body} <- Cs];
-stx(fa, {N, A}) -> erl_syntax:arity_qualifier(stx(N), stx(A));
-stx(func, {Name, Clauses}) when is_list(Clauses)-> erl_syntax:function(stx(atom, Name), Clauses);
-stx(func, {Name, Args, G, Body}) -> stx(func, {Name, stx(clauses, [{Args, G, Body}])});
-stx(implicit_fun, {N, A}) -> erl_syntax:implicit_fun(stx(fa, {N, A}));
-stx(op, Op) -> erl_syntax:operator(Op);
+stx(attr, {N, As}) ->
+    erl_syntax:attribute(stx(N), As);
+stx(clause, {Args, Guard, Body}) ->
+    erl_syntax:clause(Args, Guard, Body);
+stx(fa, {N, A}) ->
+    erl_syntax:arity_qualifier(stx(N), stx(A));
+stx(func, {Name, Clauses}) when is_list(Clauses)->
+    erl_syntax:function(stx(Name), Clauses);
+stx(implicit_fun, {N, A}) ->
+    erl_syntax:implicit_fun(stx(fa, {N, A}));
+stx(op, Op) ->
+    erl_syntax:operator(Op);
 
 %% utilities
-stx(set_pos, {Tree, Line}) -> erl_syntax:set_pos(Tree, Line).
+stx(fold, {F, A, Forms}) ->
+    erl_syntax_lib:fold(F, A, Forms);
+stx(mktuple, X) ->
+    erl_syntax:make_tree(tuple, [X]);
+stx(set_pos, {Tree, Line}) ->
+    erl_syntax:set_pos(Tree, Line);
+stx(rev, Forms) ->
+    erl_syntax:revert(Forms);
+stx(revert, Forms) ->
+    erl_syntax:revert_forms(Forms).

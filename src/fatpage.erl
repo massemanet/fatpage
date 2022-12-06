@@ -4,7 +4,7 @@
    [file/2,
     string/2]).
 -export(
-   [literal/3,
+   [final/3,
     repeat/5,
     sequence/3,
     alternative/3,
@@ -27,7 +27,7 @@ string(B, F) ->
         {error, R, P} -> {error, R, P}
     end.
 
-literal(Bin, Ptr, B) when is_binary(Bin) ->
+final(Bin, Ptr, B) when is_binary(Bin) ->
     Z = byte_size(Bin),
     try binary:part(B, {Ptr, Z}) of
         Bin -> {ok, Bin, Ptr+Z};
@@ -35,14 +35,14 @@ literal(Bin, Ptr, B) when is_binary(Bin) ->
     catch
         error:badarg -> {error, {miss, eof, Bin}, Ptr}
     end;
-literal({Bin1, Bin2}, Ptr, B) ->
+final({Bin1, Bin2}, Ptr, B) ->
     try binary:part(B, {Ptr, 1}) of
         Bin when Bin1 =< Bin, Bin =< Bin2 -> {ok, Bin, Ptr+1};
         E -> {error, {miss, E, Bin1, Bin2}, Ptr}
     catch
         error:badarg -> {error, {miss, eof, Bin1, Bin2}, Ptr}
     end;
-literal(GUARD, Ptr, B) when is_function(GUARD, 1) ->
+final(GUARD, Ptr, B) when is_function(GUARD, 1) ->
     try GUARD(C = binary:part(B, {Ptr, 1})) of
         true -> {ok, C, Ptr+1};
         false -> {error, {miss, C}, Ptr}
@@ -51,14 +51,14 @@ literal(GUARD, Ptr, B) when is_function(GUARD, 1) ->
     end.
 
 repeat(Min, Max, F, Ptr, B) ->
-    repeat(0, Min, minus1(Max), F, Ptr, B, []).
+    repeat(0, Min, minus1(Max), F, Ptr, B, byte_size(B), []).
 
-repeat(N, Min, Mx, F, Ptr, B, Xs) ->
+repeat(N, Min, Mx, F, Ptr, B, Sz, Xs) ->
     case F(Ptr, B) of
-        {ok, X, P} when N == Mx    -> {ok, lists:reverse([X|Xs]), P};
-        {ok, X, P}                 -> repeat(N+1, Min, Mx, F, P, B, [X|Xs]);
+        {ok, X, P} when N =:= Mx   -> {ok, lists:reverse([X|Xs]), P};
+        {ok, X, P}                 -> repeat(N+1, Min, Mx, F, P, B, Sz, [X|Xs]);
         {error, R, P} when N < Min -> {error, {too_few, R}, P};
-        {error, _R, _P}            -> {ok, lists:reverse(Xs), Ptr}
+        {error, _R, P}             -> {ok, lists:reverse(Xs), P}
     end.
 
 minus1(infinity) -> infinity;
@@ -68,6 +68,8 @@ merge([]) -> [];
 merge(Xs) when is_binary(hd(Xs)) -> binary:list_to_bin(Xs);
 merge(Xs) when is_list(hd(Xs)) -> lists:append(Xs).
 
+sequence(_, Ptr, B) when byte_size(B) =< Ptr ->
+    {error, eof, Ptr};
 sequence(Fs, Ptr, B) -> 
     sequence(Fs, Ptr, B, []).
 
@@ -79,12 +81,21 @@ sequence([F|Fs], Ptr, B, Xs) ->
         {error, R, P} -> {error, {unexpected, R}, P}
     end.
 
+alternative(_, Ptr, B) when byte_size(B) =< Ptr ->
+    {error, eof, Ptr};
 alternative(Fs, Ptr, B) ->
     alternative(Fs, Ptr, B, []).
 
-alternative([], Ptr, _, Es) -> {error, {fail, Es}, Ptr};
+alternative([], Ptr, _, Es) ->
+    {error, {fail, Es}, Ptr};
 alternative([F|Fs], Ptr, B, Es) ->
-    case F(Ptr, B) of
+    case alt(F, Ptr, B) of
         {ok, X, P} -> {ok, X, P};
         {error, R, P} -> alternative(Fs, Ptr, B, [{R, P}|Es])
+    end.
+
+alt(F, Ptr, B) ->
+    case erlang:fun_info(F, arity) of
+        {arity, 1} -> final(F, Ptr, B);
+        {arity, 2} -> F(Ptr, B)
     end.

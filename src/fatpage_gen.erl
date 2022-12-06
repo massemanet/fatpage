@@ -5,12 +5,26 @@
          left_recursive/1,
          forms/1,
          pp/1,
-         display/1]).
+         erl/1,
+         display/1,
+         beam/1]).
 
 -define(DBG(E), try (E) catch C:R -> erlang:display({C, R, F}),"\n :( \n" end).
 
+beam(Filename) ->
+    OutFile = out_file(Filename, beam),
+    {ok, _Mod, Beam} = compile:forms(forms(Filename)),
+    file:write_file(OutFile, Beam),
+    OutFile.
+
 display(Filename) ->
     io:fwrite("~s", [pp(Filename)]).
+
+erl(Filename) ->
+    OutFile = out_file(Filename, erl),
+    Erl = pp(Filename),
+    write_file(OutFile, Erl),
+    OutFile.
 
 pp(Filename) ->
     lists:flatmap(fun ppf/1, forms(Filename)).
@@ -126,7 +140,7 @@ get_name(Deriv) ->
     end.
 
 make_name(I) ->
-    lists:flatten(io_lib:format("-virtual-~p-", [I])).
+    flat("-virtual-~p-", [I]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% prettyprinter
@@ -141,40 +155,100 @@ mod(Filename) ->
     filename:basename(Filename, ".abnf").
 
 gen_forms(Mod, Rules) ->
-    {Forms, _} = lists:mapfoldl(fun template/2, 1, Rules),
-    FirstRule = erl_syntax:atom_value(erl_syntax:function_name(hd(Forms))),
-    fatpage_g:preamble(Mod, FirstRule)++Forms.
+    Forms = fatpage_g:forms(Mod, Rules),
+    PreAmble = preamble_forms(),
+    resolve(Forms++records(PreAmble), PreAmble).
 
-template(?RULE(Name, Code, ?DERIV(Type, X, SubDeriv)), Num) ->
-    {fatpage_g:rule(Num, Name, Code, Type, X, SubDeriv), Num+1}.
+preamble_forms() ->
+    {ok, Forms} = epp:parse_file("src/fatpage_preamble.erl",[]),
+    fatpage_g:fold_forms(fun function_kv/2, [], Forms).
 
+-define(FUNCTION(N, A), {function, _, N, A, _}).
+-define(RECORD(N), {attribute, _, record, {N, _}}).
+function_kv(?FUNCTION(N, A) = F, B) -> [{{N, A}, F}|B];
+function_kv(?RECORD(N) = R, B) -> [{{record, N}, R}|B];
+function_kv(_, B) -> B.
+
+records(PreAmble) ->
+    lists:filtermap(fun is_record/1, PreAmble).
+
+is_record({{record, _}, Rec}) -> {true, Rec};
+is_record(_) -> false.
+
+resolve(Fs, PreambleFunctions) ->
+    case lists:filter(mk_is_unknown(Fs), local_calls(Fs)) of
+        [] ->
+            Fs;
+        Unknown ->
+            Resolved = do_resolve(Unknown, PreambleFunctions, []),
+            resolve(Fs++Resolved, PreambleFunctions)
+    end.
+
+do_resolve([], _, Resolved) ->
+    lists:reverse(Resolved);
+do_resolve([U|Unknown], PreambleFunctions, Resolved) ->
+    case lists:filter(fun({function, _, N, A, _}) -> {N, A} == U end, Resolved) of
+        [_] ->
+            do_resolve(Unknown, PreambleFunctions, Resolved);
+        [] ->
+            case proplists:get_value(U, PreambleFunctions, undefined) of
+                undefined -> error({unresolved, U});
+                Form -> do_resolve(Unknown, PreambleFunctions, [Form|Resolved])
+            end
+    end.
+
+mk_is_unknown(Fs) ->
+    KnownFunctions = known_functions(Fs),
+    fun(FA)-> not lists:member(FA, KnownFunctions) end.
+
+local_calls(Fs) ->
+    fatpage_g:fold_forms(fun local_calls/2, [], Fs).
+
+local_calls({call, _, {atom, _, N}, Ps}, B) -> [{N, length(Ps)}|B];
+local_calls({'fun', _, {function, N, A}}, B) -> [{N, A}|B];
+local_calls(_, B) -> B.
+
+known_functions(Fs) ->
+    local_functions(Fs) ++ builtin_functions().
+
+local_functions(Fs) ->
+    lists:foldl(fun local_function/2, [], Fs).
+
+local_function(?FUNCTION(N, A), B) -> [{N, A}|B];
+local_function(_, B) -> B.
+
+builtin_functions() ->
+    erlang:module_info(exports).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% detect left-recursion
 %% we go through the list of rules and rewrite them (to
 %% 'nullable'/'non_nullable') until fixpoint. If the resulting list of
 %% rules is non-empty, we have left-recursion.
 fixpoint({Rules, Final}) ->
     case fix(Rules, Final, []) of
-        {Rules, Final} -> Rules;
+        {Rules, Final} -> {Rules, Final};
         RF -> fixpoint(RF)
     end.
 
-fix([], Final, ORs)                                   -> {lists:usort(ORs), lists:usort(Final)};
-fix([{rule, def_rule, Name, Rule, _}|Rs], Final, ORs) -> fix([{Name, Rule}|Rs], Final, ORs);
-fix([{Name, V}|Rs], Final, ORs) when is_atom(V)       -> fix(Rs, [{Name, V}|Final], ORs);
-fix([{Name, Rule}|Rs], Final, ORs)                    -> fix(Rs, Final, [{Name, type(Rule, Final)}|ORs]).
+fix([], Final, ORs)                             -> {lists:usort(ORs), lists:usort(Final)};
+fix([?RULE(Name, _, Deriv)|Rs], Final, ORs)     -> fix([{Name, Deriv}|Rs], Final, ORs);
+fix([{Name, V}|Rs], Final, ORs) when is_atom(V) -> fix(Rs, [{Name, V}|Final], ORs);
+fix([{Name, Deriv}|Rs], Final, ORs)             -> fix(Rs, Final, [{Name, type(Deriv, Final)}|ORs]).
 
-type(non_nullable, _)          -> non_nullable;
-type(nullable, _)              -> nullable;
-type({char_val, _}, _)         -> non_nullable;
-type({char_range, _, _}, _)    -> non_nullable;
-type({{repeat, 0, _}, _}, _)   -> nullable;
-type({{repeat, _, _}, [R]}, _) -> R;
-type({rulename, R}, Final)     -> rewrite_rulename(R, Final);
-type({alt, As}, Final)         -> rewrite_alt(As, Final);
-type({seq, Ss}, Final)         -> rewrite_seq(Ss, Final).
+type(non_nullable, _)                  -> non_nullable;
+type(nullable, _)                      -> nullable;
+type(?DERIV(rep, {0, _}, _), _)        -> nullable;
+type(?DERIV(rep, _, D), _)             -> D;
+type(?DERIV(final, char, _), _)        -> non_nullable;
+type(?DERIV(final, appl, 'EOF'), _)    -> non_nullable;
+type(?DERIV(final, appl, Name), Final) -> rewrite_name(Name, Final);
+type(?DERIV(alt, _, As), Final)        -> rewrite_alt(As, Final);
+type(?DERIV(seq, _, Ss), Final)        -> rewrite_seq(Ss, Final).
 
-rewrite_rulename(R, Final) ->
-    case proplists:get_value(R, Final, no) of
-        no -> {rulename, R};
+rewrite_name(Name, Final) ->
+    case proplists:get_value(Name, Final, no) of
+        no -> ?DERIV(final, appl, Name);
         V -> V
     end.
 
@@ -182,19 +256,19 @@ rewrite_alt(As, Final) ->
     case is_nullable(As) of
         no -> non_nullable;
         yes -> nullable;
-        perhaps -> {alt, recurse(As, Final)}
+        perhaps -> ?DERIV(alt, {}, recurse(As, Final))
     end.
 
 rewrite_seq([], _) -> nullable;
 rewrite_seq(Ss, Final) ->
     case hd(Ss) of
         non_nullable -> non_nullable;
-        nullable -> {seq, tl(Ss)};
-        _ -> {seq, recurse(Ss, Final)}
+        nullable -> ?DERIV(seq, {}, tl(Ss));
+        _ -> ?DERIV(seq, {}, recurse(Ss, Final))
     end.
 
-recurse(Rs, Final) ->
-    [type(R, Final) || R <- Rs].
+recurse(Ds, Final) ->
+    [type(D, Final) || D <- Ds].
 
 is_nullable(As) ->
     case {all_non_nullable(As), any_nullable(As)} of
@@ -208,3 +282,20 @@ all_non_nullable(L) ->
 
 any_nullable(L) ->
     lists:any(fun(V) -> V == nullable end, L).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% generate beam and rite .beam file
+
+out_file(Filename, Ext) ->
+    Dir = filename:dirname(Filename),
+    Base = filename:basename(Filename, ".abnf"),
+    flat("~s/~s.~s", [Dir, Base, Ext]).
+
+flat(F, As) ->
+    lists:flatten(io_lib:format(F, As)).
+
+write_file(OutFile, String) ->
+    {ok, FD} = file:open(OutFile, [write]),
+    io:fwrite(FD, "~s", [String]),
+    file:close(FD).
+
