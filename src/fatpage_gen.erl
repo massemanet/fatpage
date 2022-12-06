@@ -26,21 +26,27 @@ parse(String) when is_list(String) ->
     {rulelist, _, Rules} = abnfc:parse(String, []),
     lists:map(fun reify/1, Rules).
 
--define(DERIV(Type, X, Ds), {deriv, Type, X, Ds}).
--define(RULE(Name, Code, Deriv), {rule, Name, Deriv, Code}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+-record(deriv, {type, x = {}, ds}).
+-record(rule, {name, deriv, code = nocode}).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% rewrite bootstrap parser output to internal form
-reify({rule, def_rule, Name, Deriv, Code}) -> ?RULE(Name, Code, reify(Deriv));
-reify(?DERIV(_, _, _) = D) -> D;
-reify({rulename, Name})           -> ?DERIV(final, appl, Name);
-reify({alt, Alts})                -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
-reify({char_alt, Alts})           -> ?DERIV(alt, {}, lists:map(fun reify/1, Alts));
-reify({seq, Seqs})                -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
-reify({char_seq, Seqs})           -> ?DERIV(seq, {}, lists:map(fun reify/1, Seqs));
-reify({repeat, Min, Max, Rep})    -> ?DERIV(rep, {Min, Max}, reify(Rep));
-reify({char_val, Char})           -> ?DERIV(final, char, {Char});
-reify({char_range, Char1, Char2}) -> ?DERIV(final, char, {Char1, Char2}).
 
+reify(D) when is_record(D, deriv) -> D;
+reify(Ds) when is_list(Ds)        -> lists:map(fun reify/1, Ds);
+reify({rule, def_rule, N, D, C})  -> #rule{name = N, code = C, deriv = reify(D)};
+reify({rulename, Name})           -> #deriv{type = final, x = appl, ds = Name};
+reify({alt, Alts})                -> #deriv{type = alt, ds = reify(Alts)};
+reify({char_alt, Alts})           -> #deriv{type = alt, ds = reify(Alts)};
+reify({seq, Seqs})                -> #deriv{type = seq, ds = reify(Seqs)};
+reify({char_seq, Seqs})           -> #deriv{type = seq, ds = reify(Seqs)};
+reify({repeat, Min, Max, Rep})    -> #deriv{type = rep, x = {Min, Max}, ds = reify(Rep)};
+reify({char_val, C0})             -> #deriv{type = final, x = char, ds = {C0}};
+reify({char_range, C1, C2})       -> #deriv{type = final, x = char, ds = {C1, C2}}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% unroll nested rules
 unroll([], Orules) ->
     lists:reverse(Orules);
@@ -52,17 +58,16 @@ unroll([Rule|Rules], Orules) ->
     end.
 
 expand_rule(Rule) ->
-    ?RULE(Name, Code, Deriv) = Rule,
+    Deriv = Rule#rule.deriv,
     case is_all_final(Deriv) of
         true ->
             Rule;
         false ->
             {NewDerivs, NewRules} = finalize(Deriv),
-            ?DERIV(Type, X, _) = Deriv,
-            [?RULE(Name, Code, ?DERIV(Type, X, NewDerivs))|NewRules]
+            [Rule#rule{deriv = Deriv#deriv{ds = NewDerivs}}|NewRules]
     end.
 
-is_all_final(?DERIV(Type, _, Ds)) ->
+is_all_final(#deriv{type = Type, ds = Ds}) ->
     case Type of
         final -> true;
         rep -> is_final(Ds);
@@ -70,12 +75,13 @@ is_all_final(?DERIV(Type, _, Ds)) ->
         seq -> lists:all(fun is_final/1, Ds)
     end.
 
-is_final(?DERIV(T, _, _)) -> is_final(T);
-is_final(T) when is_atom(T) -> final == T.
+is_final(#deriv{type = Type}) -> is_final(Type);
+is_final(final) -> true;
+is_final(_) -> false.
 
-finalize(?DERIV(Type, _, Ds)) when Type == seq; Type == alt ->
+finalize(#deriv{type = Type, ds = Ds}) when Type == seq; Type == alt ->
     lists:foldl(fun finalize/2, {[], []}, Ds);
-finalize(?DERIV(rep, _, Ds)) ->
+finalize(#deriv{type = rep, ds = Ds}) ->
     {[D], Rs} = finalize(Ds, {[], []}),
     {D, Rs};
 finalize(Deriv) ->
@@ -98,10 +104,10 @@ rewrite_deriv(Deriv, Derivs, Rules) ->
     end.
 
 append_deriv(appl, Name, Derivs) ->
-    append_thing(?DERIV(final, appl, Name), Derivs).
+    append_thing(#deriv{type = final, x = appl, ds = Name}, Derivs).
 
 append_rule(Name, Deriv, Rules) ->
-    append_thing(?RULE(Name, nocode, Deriv), Rules).
+    append_thing(#rule{name = Name, deriv = Deriv}, Rules).
 
 append_thing(T, Ts) ->
     Ts++[T].
@@ -132,6 +138,69 @@ flat(F, As) ->
 
 ppf(F) ->
     ?DBG(erl_prettypr:format(F, [{paper, 100}, {ribbon, 200}])++[10, 10]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% detect left-recursion
+%% we go through the list of rules and rewrite them (to
+%% 'nullable'/'non_nullable') until fixpoint. If the resulting list of
+%% rules is non-empty, we have left-recursion.
+fixpoint({Rules, Final}) ->
+    case fix(Rules, Final, []) of
+        {Rules, Final} -> {Rules, Final};
+        RF -> fixpoint(RF)
+    end.
+
+fix([], Final, ORs)                              -> {lists:usort(ORs), lists:usort(Final)};
+fix([#rule{name = N, deriv = D}|Rs], Final, ORs) -> fix([{N, D}|Rs], Final, ORs);
+fix([{Name, V}|Rs], Final, ORs) when is_atom(V)  -> fix(Rs, [{Name, V}|Final], ORs);
+fix([{Name, Deriv}|Rs], Final, ORs)              -> fix(Rs, Final, [{Name, type(Deriv, Final)}|ORs]).
+
+type(non_nullable, _)                               -> non_nullable;
+type(nullable, _)                                   -> nullable;
+type(#deriv{type = rep, x = {0, _}}, _)             -> nullable;
+type(#deriv{type = rep, ds = D}, _)                 -> D;
+type(#deriv{type = final, x = char}, _)             -> non_nullable;
+type(#deriv{type = final, x = appl, ds = 'EOF'}, _) -> non_nullable;
+type(#deriv{type = final, x = appl, ds = N}, Final) -> rewrite_name(N, Final);
+type(#deriv{type = alt, ds = As}, Final)            -> rewrite_alt(As, Final);
+type(#deriv{type = seq, ds = Ss}, Final)            -> rewrite_seq(Ss, Final).
+
+rewrite_name(Name, Final) ->
+    case proplists:get_value(Name, Final, no) of
+        no -> #deriv{type = final, x = appl, ds = Name};
+        V -> V
+    end.
+
+rewrite_alt(As, Final) ->
+    case is_nullable(As) of
+        no      -> non_nullable;
+        yes     -> nullable;
+        perhaps -> #deriv{type = alt, ds = recurse(As, Final)}
+    end.
+
+rewrite_seq([], _) -> nullable;
+rewrite_seq(Ss, Final) ->
+    case hd(Ss) of
+        non_nullable -> non_nullable;
+        nullable     -> #deriv{type = seq, ds = tl(Ss)};
+        _            -> #deriv{type = seq, ds = recurse(Ss, Final)}
+    end.
+
+recurse(Ds, Final) ->
+    [type(D, Final) || D <- Ds].
+
+is_nullable(As) ->
+    case {all_non_nullable(As), any_nullable(As)} of
+        {true, false} -> no;
+        {false, true} -> yes;
+        {false,false} -> perhaps
+    end.
+
+all_non_nullable(L) ->
+    lists:all(fun(V) -> V == non_nullable end, L).
+
+any_nullable(L) ->
+    lists:any(fun(V) -> V == nullable end, L).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% code gen
@@ -201,66 +270,3 @@ local_function(_, B) -> B.
 
 builtin_functions() ->
     erlang:module_info(exports).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% detect left-recursion
-%% we go through the list of rules and rewrite them (to
-%% 'nullable'/'non_nullable') until fixpoint. If the resulting list of
-%% rules is non-empty, we have left-recursion.
-fixpoint({Rules, Final}) ->
-    case fix(Rules, Final, []) of
-        {Rules, Final} -> {Rules, Final};
-        RF -> fixpoint(RF)
-    end.
-
-fix([], Final, ORs)                             -> {lists:usort(ORs), lists:usort(Final)};
-fix([?RULE(Name, _, Deriv)|Rs], Final, ORs)     -> fix([{Name, Deriv}|Rs], Final, ORs);
-fix([{Name, V}|Rs], Final, ORs) when is_atom(V) -> fix(Rs, [{Name, V}|Final], ORs);
-fix([{Name, Deriv}|Rs], Final, ORs)             -> fix(Rs, Final, [{Name, type(Deriv, Final)}|ORs]).
-
-type(non_nullable, _)                  -> non_nullable;
-type(nullable, _)                      -> nullable;
-type(?DERIV(rep, {0, _}, _), _)        -> nullable;
-type(?DERIV(rep, _, D), _)             -> D;
-type(?DERIV(final, char, _), _)        -> non_nullable;
-type(?DERIV(final, appl, 'EOF'), _)    -> non_nullable;
-type(?DERIV(final, appl, Name), Final) -> rewrite_name(Name, Final);
-type(?DERIV(alt, _, As), Final)        -> rewrite_alt(As, Final);
-type(?DERIV(seq, _, Ss), Final)        -> rewrite_seq(Ss, Final).
-
-rewrite_name(Name, Final) ->
-    case proplists:get_value(Name, Final, no) of
-        no -> ?DERIV(final, appl, Name);
-        V -> V
-    end.
-
-rewrite_alt(As, Final) ->
-    case is_nullable(As) of
-        no -> non_nullable;
-        yes -> nullable;
-        perhaps -> ?DERIV(alt, {}, recurse(As, Final))
-    end.
-
-rewrite_seq([], _) -> nullable;
-rewrite_seq(Ss, Final) ->
-    case hd(Ss) of
-        non_nullable -> non_nullable;
-        nullable -> ?DERIV(seq, {}, tl(Ss));
-        _ -> ?DERIV(seq, {}, recurse(Ss, Final))
-    end.
-
-recurse(Ds, Final) ->
-    [type(D, Final) || D <- Ds].
-
-is_nullable(As) ->
-    case {all_non_nullable(As), any_nullable(As)} of
-        {true, false} -> no;
-        {false, true} -> yes;
-        {false,false} -> perhaps
-    end.
-
-all_non_nullable(L) ->
-    lists:all(fun(V) -> V == non_nullable end, L).
-
-any_nullable(L) ->
-    lists:any(fun(V) -> V == nullable end, L).
