@@ -9,26 +9,34 @@
     pp/1,
     erl/1,
     display/1,
-    beam/1]).
+    beam/1
+   ]).
 
 %% rebar3 provider callbacks
 -export(
    [command_line_args/1,
-    beam/2,
     format_error/1
    ]).
 
 %% callbacks from rebar3 plugin
-command_line_args(Args) -> Args.
-
-beam(Filename, _Opts) -> beam(Filename).
+command_line_args(As) ->
+    case proplists:get_value(task, As, undefined) of
+        undefined -> error({no_target, As});
+        File -> opts(File)
+    end.
 
 format_error(Error) -> flat("~w", [Error]).
 
+opts(File) ->
+    maps:from_list([{in, File}, {out, out_file(File, beam)}]).
+
 %% API
-beam(Filename) ->
-    OutFile = out_file(Filename, beam),
-    {ok, _Mod, Beam} = compile:forms(forms(Filename)),
+
+beam(Filename) when not is_map(Filename) ->
+    beam(opts(Filename));
+beam(Opts) when is_map(Opts) ->
+    #{in := File, out := OutFile} = Opts,
+    {ok, _Mod, Beam} = compile:forms(forms(File)),
     file:write_file(OutFile, Beam),
     OutFile.
 

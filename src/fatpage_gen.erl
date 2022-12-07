@@ -237,8 +237,14 @@ gen_forms(Mod, Rules) ->
     resolve(Forms++records(PreAmble), PreAmble).
 
 preamble_forms() ->
-    {ok, Forms} = epp:parse_file("src/fatpage_preamble.erl",[]),
+    {ok, Forms} = epp:parse_file(preamble(), []),
     fatpage_g:fold_forms(fun function_kv/2, [], Forms).
+
+preamble() ->
+    case filelib:wildcard("**/fatpage_preamble.erl") of
+        [Preamble|_] -> Preamble;
+        [] -> error({cant_find_preamble})
+    end.
 
 -define(FUNCTION(N, A), {function, _, N, A, _}).
 -define(RECORD(N), {attribute, _, record, {N, _}}).
