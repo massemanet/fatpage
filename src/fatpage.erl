@@ -1,5 +1,6 @@
 -module(fatpage).
 
+%% API
 -export(
    [parse/1,
     unroll/1,
@@ -10,6 +11,21 @@
     display/1,
     beam/1]).
 
+%% rebar3 provider callbacks
+-export(
+   [command_line_args/1,
+    beam/2,
+    format_error/1
+   ]).
+
+%% callbacks from rebar3 plugin
+command_line_args(Args) -> Args.
+
+beam(Filename, _Opts) -> beam(Filename).
+
+format_error(Error) -> flat("~w", [Error]).
+
+%% API
 beam(Filename) ->
     OutFile = out_file(Filename, beam),
     {ok, _Mod, Beam} = compile:forms(forms(Filename)),
