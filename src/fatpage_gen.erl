@@ -16,7 +16,7 @@ forms(Mod, Rules) ->
     gen_forms(Mod, Rules).
 
 left_recursive(Rules) ->
-    fixpoint({Rules, []}).
+    fixpoint({Rules, predefined()}).
 
 unroll(Rules) ->
     erase(fatpage),
@@ -175,6 +175,12 @@ fixpoint({Rules, Final}) ->
         {Rules, Final} -> {Rules, Final};
         RF -> fixpoint(RF)
     end.
+
+predefined() ->
+    [{'EOF', non_nullable},
+     {'CR', non_nullable},
+     {'LF', non_nullable},
+     {'WS', non_nullable}].
 
 fix([], Final, ORs)                              -> {lists:usort(ORs), lists:usort(Final)};
 fix([#rule{name = N, deriv = D}|Rs], Final, ORs) -> fix([{N, D}|Rs], Final, ORs);
