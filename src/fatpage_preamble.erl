@@ -4,7 +4,8 @@
 -export([file/2, string/2,
         repeat/4, alternative/2, sequence/2, final/2, final/3]).
 
--export(['-EOF-'/1, '-CR-'/1]).
+-export([squeeze/1,
+         '-EOF-'/1, '-CR-'/1, '-LF-'/1, '-WS-'/1]).
 
 -record(obj, {ptr, bin, sz}).
 
@@ -15,7 +16,18 @@
     end.
 
 '-CR-'(Obj) ->
-    final(10, Obj).
+    final($\n, Obj).
+
+'-LF-'(Obj) ->
+    final($\r, Obj).
+
+'-WS-'(Obj) ->
+    final([$ , $\t], Obj).
+
+squeeze(L) when is_list(L) ->
+    try binary:list_to_bin(L)
+    catch error:badarg -> lists:flatten(L)
+    end.
 
 file(Filename, F) ->
     case file:read_file(Filename) of
@@ -80,7 +92,18 @@ final(Char, Obj) when is_integer(Char) ->
     case peek_chars(Obj, 1) of
         {[Char], Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
         E -> {error, {miss, E}}
+    end;
+final(Cs, Obj) when is_list(Cs) ->
+    case peek_chars(Obj, 1) of
+        {[C], Bin, Sz} ->
+            case lists:member(C, Cs) of
+                true -> {ok, Bin, bump_ptr(Obj, Sz)};
+                false -> {error, {miss, [C]}}
+            end;
+        E ->
+            {error, {miss, E, Cs}}
     end.
+
 final(C1, C2, Obj) when is_integer(C1), is_integer(C2) ->
     case peek_chars(Obj, 1) of
         {[C], Bin, Sz} when C1 =< C, C =< C2 ->

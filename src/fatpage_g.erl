@@ -37,7 +37,7 @@ rule(Line, Name, Code, Type, X, Sub) ->
     stx(set_pos, {rule(Name, Code, Type, X, Sub), Line}).
 
 rule(Name, Code, Type, X, Sub) ->
-    stx(func, {stx(rule, Name), [stx('Obj')], [], [rule_body(Code, Type, X, Sub)]}).
+    stx(func, {rule_name(Name), [stx('Obj')], [], [rule_body(Code, Type, X, Sub)]}).
 
 rule_body(nocode, Type, X, Sub) -> fcall(Type, X, Sub);
 rule_body(Code, Type, X, Sub) -> fcase(Code, Type, X, Sub).
@@ -53,20 +53,14 @@ fcall(alt, {}, Derivs) ->
     stx(call, {alternative, [finals(Derivs), stx('Obj')]});
 fcall(seq, {}, Derivs) ->
     stx(call, {sequence, [finals(Derivs), stx('Obj')]});
-fcall(final, char, Ds) ->
-    stx(call, {final, [final(#deriv{type=final, x=char, ds=Ds}), stx('Obj')]});
-fcall(final, appl, Ds) ->
-    stx(call, {final, [final(#deriv{type=final, x=appl, ds=Ds}), stx('Obj')]}).
+fcall(final, char, Cs) ->
+    call_final(Cs, stx('Obj'));
+fcall(final, appl, Name) ->
+    stx(call, {Name, [stx('Obj')]}).
 
 fclause({ok, Nbindings, [Code]}) ->
     Match = stx(tuple, [stx(ok), bindings(Nbindings, Code), stx('O')]),
     Ret = stx(tuple, [stx(ok), Code, stx('O')]),
-%    Ret = {tree,tuple,
-%           {attr,0,[],none},
-%           [{tree,atom,{attr,0,[],none},ok},
-%            {tree,variable,{attr,0,[],none},'Y1'},
-%            {tree,variable,{attr,0,[],none},'O'}]},
-%    Ret = {tuple,0,[{atom,0,ok},Code,{var,0,'O'}]},
     stx(clause, {[Match], [], [Ret]});
 fclause({err, V}) ->
     Var = stx(V),
@@ -117,14 +111,19 @@ match_var(V, Vs) ->
 finals(Derivs) ->
     stx(list, [final(Deriv) || Deriv <- Derivs]).
 
-final(#deriv{type=final, x=char, ds={C1, C2}}) -> cfun([{C1, C2}]);
-final(#deriv{type=final, x=char, ds=C0}) -> cfun([C0]);
+final(#deriv{type=final, x=char, ds=C}) -> cfun([C]);
 final(#deriv{type=final, x=appl, ds=Name}) -> stx(rule_fun, Name).
 
-cfun([{C0}]) ->
-    stx(fun_, [{[stx('O')], [], [stx(call, {final, [stx(C0), stx('O')]})]}]);
-cfun([{C1, C2}]) ->
-    stx(fun_, [{[stx('O')], [], [stx(call, {final, [stx(C1), stx(C2), stx('O')]})]}]).
+cfun([X]) ->
+    stx(fun_, [{[stx('O')], [], [call_final(X, stx('O'))]}]).
+
+call_final({C0}, Var) ->
+    stx(call, {final, [stx(C0), Var]});
+call_final({C1, C2}, Var) ->
+    stx(call, {final, [stx(C1), stx(C2), Var]}).
+
+rule_name(N) ->
+    lists:flatten(io_lib:format("-~s-", [N])).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Syntax manipulation
@@ -148,15 +147,13 @@ stx(I) when is_integer(I) ->
 stx(bin_fields, Vs) ->
     [stx(bin_field, V) || V <- Vs];
 stx(clauses, Cs) ->
-    [stx(clause, {Args, G, Body}) || {Args, G, Body} <- Cs];
+    [stx(clause, AGB) || AGB <- Cs];
 stx(func, {Name, Args, G, Body}) ->
     stx(func, {Name, stx(clauses, [{Args, G, Body}])});
 stx(list, L) when is_list(L) ->
     stx(list, {L, none});
-stx(rule_fun, N) when is_atom(N) ->
-    stx(implicit_fun, {stx(rule, N), 1});
-stx(rule, N) ->
-    [$-|atom_to_list(N)]++"-";
+stx(rule_fun, N) ->
+    stx(implicit_fun, {rule_name(N), 1});
 
 %% primitives
 stx(atom, A) ->
