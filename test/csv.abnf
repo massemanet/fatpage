@@ -1,30 +1,20 @@
 file        = 1*record-eol
 
-record-eol  = record ( 1*eol /  EOF )         : Y1.
+record-eol  = record ( 1*CR / EOF )       : Y1.
 
-eol         = crlf / cr / lf
+record      = field *comma-field          : [Y1|Y2].
 
-record      = field *comma-field              : [Y1|Y2].
-
-comma-field = comma field                     : Y2.
+comma-field = comma field                 : Y2.
 
 field       = quoted / unquoted
 
-quoted      = *WS dquote *(uqtext / comma) dquote *WS    : merge(Y3).
+quoted      = *WS dquote *(uqtext / comma) dquote *WS    : squeeze(Y3).
 
-unquoted    = *uqtext                         : merge(Y).
+unquoted    = *uqtext                     : squeeze(Y).
 
-uqtext      = unicodeish / *WS / doubledq
+uqtext      = unicodeish / 1*WS / doubledq
 
-doubledq    = dquote dquote                   : Y1.
-
-crlf        = cr lf
-
-cr          = %x0A
-
-lf          = %x0D
-
-WS          = %x09 / %x20
+doubledq    = %x22 %x22                   : Y1.
 
 dquote      = %x22
 
