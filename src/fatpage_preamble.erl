@@ -1,25 +1,88 @@
 %% -*- mode: erlang; erlang-indent-level: 4 -*-
 -module(fatpage_preamble).
 
--export([file/2, string/2,
-        repeat/4, alternative/2, sequence/2, final/2, final/3]).
+%% API
+-export([file/2, string/2]).
 
--export([squeeze/1,
-         '-EOF-'/1, '-CR-'/1, '-LF-'/1, '-WS-'/1]).
+%% contructor primitives
+-export([squeeze/1]).
+
+%% combinators (exported to keep compler happy)
+-export([repeat/4, alternative/2, sequence/2, final/2]).
+
+%% core rules
+-export(
+   ['-ALPHA-'/1, '-BIT-'/1, '-CR-'/1, '-CRLF-'/1, '-DIGIT-'/1, '-DQUOTE-'/1, '-HEXDIG-'/1, '-HTAB-'/1, '-LF-'/1, '-SP-'/1, '-VCHAR-'/1, '-WSP-'/1]).
+
+%% extra builtin rules
+-export(
+   ['-EOF-'/1, '-WS-'/1]).
 
 -record(obj, {ptr, bin, sz}).
+
+'-ALPHA-'(Obj) ->  % A-Z / a-z
+    F = fun(C) when $A =< C, C =< $Z -> true;
+           (C) when $a =< C, C =< $z -> true;
+           (_) -> false
+        end,
+    final(F, Obj).
+
+'-BIT-'(Obj) ->
+    final([$0, $1], Obj).
+
+'-CR-'(Obj) ->
+    final($\n, Obj).
+
+'-CRLF-'(Obj) ->
+    case final($\n, Obj) of
+        {error, Error} ->
+            {error, Error};
+        {ok, <<"\n">>, O0} ->
+            case final($\r, O0) of
+                {ok, <<"\r">>, O} -> {ok, <<"\n\r">>, O};
+                {error, _} -> {ok, <<"\n">>, O0}
+            end
+    end.
+
+'-DIGIT-'(Obj) ->
+    F = fun(C) when $0 =< C, C =< $9 -> true;
+           (_) -> false
+        end,
+    final(F, Obj).
+
+'-DQUOTE-'(Obj) ->
+    final($\", Obj).
+
+'-HEXDIG-'(Obj) ->
+    F = fun(C) when $0 =< C, C =< $9 -> true;
+           (C) when $A =< C, C =< $F -> true;
+           (_) -> false
+        end,
+    final(F, Obj).
+
+'-HTAB-'(Obj) ->
+    final($\t, Obj).
+    
+'-LF-'(Obj) ->
+    final($\r, Obj).
+
+%% '-LWSP-'(Obj)           =  *(WSP / CRLF WSP)
+%% '-OCTET-'(Obj)          =  %x00-FF
+
+'-SP-'(Obj) ->
+    final($ , Obj).
+
+'-VCHAR-'(Obj) -> % visible (printing) characters
+    final({$!, $~}, Obj).
+
+'-WSP-'(Obj) -> % whitespace
+    final([$ , $\t], Obj).
 
 '-EOF-'(#obj{ptr = Ptr, sz = Z} = Obj) ->
     if Z == Ptr -> {ok, eof, Obj#obj{ptr = eof}};
        Ptr < Z -> {error, not_eof};
        true -> {error, past_eof}
     end.
-
-'-CR-'(Obj) ->
-    final($\n, Obj).
-
-'-LF-'(Obj) ->
-    final($\r, Obj).
 
 '-WS-'(Obj) ->
     final([$ , $\t], Obj).
@@ -88,10 +151,26 @@ sequence([F|Fs], Obj, Xs) ->
         {error, R} -> {error, {unexpected, R}}
     end.
 
+final(CFUN, Obj) when is_function(CFUN, 1) ->
+    case peek_chars(Obj, 1) of
+        {[Char], Bin, Sz} ->
+            case CFUN(Char) of
+                true -> {ok, Bin, bump_ptr(Obj, Sz)};
+                false -> {error, {miss, Char}}
+            end;
+        E -> {error, {miss, E}}
+    end;
 final(Char, Obj) when is_integer(Char) ->
     case peek_chars(Obj, 1) of
         {[Char], Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
         E -> {error, {miss, E}}
+    end;
+final({C1, C2}, Obj) when is_integer(C1), is_integer(C2) ->
+    case peek_chars(Obj, 1) of
+        {[C0], Bin, Sz} when C1 =< C0, C0 =< C2 ->
+            {ok, Bin, bump_ptr(Obj, Sz)};
+        E ->
+            {error, {miss, E, C1, C2}}
     end;
 final(Cs, Obj) when is_list(Cs) ->
     case peek_chars(Obj, 1) of
@@ -102,14 +181,6 @@ final(Cs, Obj) when is_list(Cs) ->
             end;
         E ->
             {error, {miss, E, Cs}}
-    end.
-
-final(C1, C2, Obj) when is_integer(C1), is_integer(C2) ->
-    case peek_chars(Obj, 1) of
-        {[C], Bin, Sz} when C1 =< C, C =< C2 ->
-            {ok, Bin, bump_ptr(Obj, Sz)};
-        E ->
-            {error, {miss, E, C1, C2}}
     end.
 
 peek_chars(#obj{ptr = Ptr, sz = Sz}, Num) when Sz < Ptr+Num ->

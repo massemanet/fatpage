@@ -1,4 +1,4 @@
- ; RFC 5234. ABNF. Crocker & Overell. January 2008.
+; RFC 5234. ABNF. Crocker & Overell. January 2008.
 
 rulelist       =  1*( rule / (*c-wsp c-nl) )
 

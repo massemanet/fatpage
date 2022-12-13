@@ -23,8 +23,17 @@ unroll(Rules) ->
     unroll(Rules, []).
 
 parse(String) when is_list(String) ->
-    {rulelist, _, Rules} = abnfc:parse(String, []),
-    lists:map(fun reify/1, Rules).
+    lists:map(fun reify/1, parse_abnf(String)).
+
+parse_abnf(String) ->
+    case erlang:module_loaded(fatpage_rfc5234) of
+        true -> fatpage_rfc5234:string(String);
+        false -> bootstrap(String)
+    end.
+
+bootstrap(String) ->
+    {ok, {rulelist, undefined, Rules}, []} = abnfc_rfc4234:decode(rulelist, String),
+    Rules.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

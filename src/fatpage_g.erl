@@ -120,7 +120,7 @@ cfun([X]) ->
 call_final({C0}, Var) ->
     stx(call, {final, [stx(C0), Var]});
 call_final({C1, C2}, Var) ->
-    stx(call, {final, [stx(C1), stx(C2), Var]}).
+    stx(call, {final, [stx(tuple, [stx(C1), stx(C2)]), Var]}).
 
 rule_name(N) ->
     lists:flatten(io_lib:format("-~s-", [N])).
