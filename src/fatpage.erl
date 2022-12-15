@@ -36,8 +36,9 @@ beam(Filename) when not is_map(Filename) ->
     beam(opts(Filename));
 beam(Opts) when is_map(Opts) ->
     #{in := File, out := OutFile} = Opts,
-    {ok, _Mod, Beam} = compile:forms(forms(File)),
+    {ok, Mod, Beam} = compile:forms(forms(File), [debug_info]),
     file:write_file(OutFile, Beam),
+    code:load_binary(Mod, OutFile, Beam),
     OutFile.
 
 display(Filename) ->
