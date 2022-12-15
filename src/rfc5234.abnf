@@ -2,7 +2,7 @@
 
 rulelist       =  1*( rule / (*c-wsp c-nl) )
 
-rule           =  rulename defined-as elements c-nl
+rule           =  rulename defined-as elements c-nl       ; {Y1, Y3}.
                        ; continues if next line starts
                        ;  with white space
 
@@ -28,7 +28,7 @@ concatenation  =  repetition *(1*c-wsp repetition)
 
 repetition     =  [repeat] element
 
-repeat         =  1*DIGIT / (*DIGIT "*" *DIGIT)
+repeat         =  (*DIGIT "*" *DIGIT) / 1*DIGIT
 
 element        =  rulename / group / option /
                   char-val / num-val / prose-val
