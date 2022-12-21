@@ -1,0 +1,17 @@
+term   = list / cons / tuple / call / atom      ;;
+
+list   = "[" *WS [terms] *WS "]"                ;;
+
+cons   = "[" *WS terms *WS "|" *WS term *WS "]" ;;
+
+tuple  = "{" *WS [terms] *WS "}"                ;;
+
+call   = atom "(" *WS [terms] *WS ")"           ;;
+
+terms  = term *WS *cterm                        ;;
+
+cterm  = "," *WS term                           ;;
+
+atom   = lcase *(ALPHA / DIGIT)                 ;;
+
+lcase  = %x97-122                               ;;
