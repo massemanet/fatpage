@@ -21,7 +21,7 @@ string(String) -> string(String, fun '-rulelist-'/1).
 
 '-rule-'(Obj) ->
     case sequence([fun '-rulename-'/1, fun '-defined-as-'/1, fun '-elements-'/1, fun '-c-nl-'/1], Obj) of
-        {ok, [Y1, _, Y3, _], O} -> {ok, {rule, Y1, Y3}, O};
+        {ok, [Y1, _, Y3, Y4], O} -> {ok, {rule, Y1, Y3, Y4}, O};
         Err -> Err
     end.
 
@@ -60,10 +60,19 @@ string(String) -> string(String, fun '-rulelist-'/1).
 
 '--virtual-7--'(Obj) -> sequence([fun '-c-nl-'/1, fun '-WSP-'/1], Obj).
 
-'-c-nl-'(Obj) -> alternative([fun '-comment-'/1, fun '-CRLF-'/1], Obj).
+'-c-nl-'(Obj) -> alternative([fun '-construct-'/1, fun '-comment-'/1, fun '-CRLF-'/1], Obj).
+
+'-construct-'(Obj) ->
+    case sequence([fun (O) -> final(59, O) end, fun(O) -> final(59, O) end, fun '--virtual-8--'/1, fun '-CRLF-'/1], Obj) of
+        {ok, [_, _, Y3, _], O} -> {ok, {code, squeeze(Y3)}, O};
+        Err -> Err
+    end.
 
 '-comment-'(Obj) ->
-    sequence([fun (O) -> final(59, O) end, fun '--virtual-8--'/1, fun '-CRLF-'/1], Obj).
+    case sequence([fun (O) -> final(59, O) end, fun '--virtual-8--'/1, fun '-CRLF-'/1], Obj) of
+        {ok, [_, Y2, _], O} -> {ok, {comment, squeeze(Y2)}, O};
+        Err -> Err
+    end.
 
 '--virtual-8--'(Obj) -> repeat(0, infinity, fun '--virtual-9--'/1, Obj).
 
@@ -109,11 +118,7 @@ string(String) -> string(String, fun '-rulelist-'/1).
     end.
 
 '--virtual-15--'(Obj) ->
-    case repeat(0, 1, fun '-repeat-'/1, Obj) of
-        {ok, [], O} -> {ok, {1, 1}, O};
-        {ok, [Y], O} -> {ok, Y, O};
-        Err -> Err
-    end.
+    repeat(0, 1, fun '-repeat-'/1, Obj).
 
 '-repeat-'(Obj) -> alternative([fun '--virtual-16--'/1, fun '--virtual-17--'/1], Obj).
 
@@ -127,7 +132,7 @@ string(String) -> string(String, fun '-rulelist-'/1).
 
 '--virtual-17--'(Obj) ->
     case repeat(1, infinity, fun '-DIGIT-'/1, Obj) of
-        {ok, Y, O} -> {ok, {rep_lo(Y), rep_hi(Y)}, O};
+        {ok, Y, O} when length(Y) == 0 -> {ok, {rep_lo(Y), rep_hi(Y)}, O};
         Err -> Err
     end.
 
@@ -190,12 +195,12 @@ string(String) -> string(String, fun '-rulelist-'/1).
 
 '--virtual-26--'(Obj) -> repeat(1, infinity, fun '--virtual-28--'/1, Obj).
 
-'--virtual-28--'(Obj) -> sequence([fun (O) -> final(46, O) end, fun '--virtual-23--'/1], Obj).
-
 '--virtual-27--'(Obj) -> sequence([fun (O) -> final(45, O) end, fun '--virtual-23--'/1], Obj).
 
+'--virtual-28--'(Obj) -> sequence([fun (O) -> final(46, O) end, fun '--virtual-23--'/1], Obj).
+
 '-dec-val-'(Obj) ->
-    sequence([fun '--virtual-29--'/1, fun '--virtual-16--'/1, fun '--virtual-30--'/1], Obj).
+    sequence([fun '--virtual-29--'/1, fun '--virtual-17--'/1, fun '--virtual-30--'/1], Obj).
 
 '--virtual-29--'(Obj) ->
     alternative([fun (O) -> final(100, O) end, fun (O) -> final(68, O) end], Obj).
@@ -206,9 +211,9 @@ string(String) -> string(String, fun '-rulelist-'/1).
 
 '--virtual-32--'(Obj) -> repeat(1, infinity, fun '--virtual-34--'/1, Obj).
 
-'--virtual-34--'(Obj) -> sequence([fun (O) -> final(46, O) end, fun '--virtual-16--'/1], Obj).
-
 '--virtual-33--'(Obj) -> sequence([fun (O) -> final(45, O) end, fun '--virtual-16--'/1], Obj).
+
+'--virtual-34--'(Obj) -> sequence([fun (O) -> final(46, O) end, fun '--virtual-16--'/1], Obj).
 
 '-hex-val-'(Obj) ->
     sequence([fun '--virtual-35--'/1, fun '--virtual-36--'/1, fun '--virtual-37--'/1], Obj).
@@ -379,7 +384,7 @@ peek_chars(#obj{bin = Bin, ptr = Ptr}, Num) ->
     end.
 
 squeeze(L) when is_list(L) ->
-    try binary:list_to_bin(L)
+    try binary:list_to_bin(re:replace(L, " +", "", [global]))
     catch error:badarg -> lists:flatten(L)
     end.
 
