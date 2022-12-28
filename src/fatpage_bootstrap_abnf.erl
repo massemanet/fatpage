@@ -165,18 +165,26 @@ string(String) -> string(String, fun '-rulelist-'/1).
                    fun '--virtual-2--'/1,
                    fun (O) -> final(93, O) end],
                   Obj) of
-        {ok, [_, _, Y3, _, _], O} -> {ok, {rep, {0, 1}, Y3}, O};
+        {ok, [_, _, Y3, _, _], O} -> {ok, {rep, [{0, 1}], Y3}, O};
         Err -> Err
     end.
 
-'-char-val-'(Obj) -> sequence([fun '-DQUOTE-'/1, fun '--virtual-19--'/1, fun '-DQUOTE-'/1], Obj).
+'-char-val-'(Obj) ->
+    case sequence([fun '-DQUOTE-'/1, fun '--virtual-19--'/1, fun '-DQUOTE-'/1], Obj) of
+        {ok, [_, Y2, _], O} -> {ok, Y2, O};
+        Err -> Err
+    end.
 
 '--virtual-19--'(Obj) -> repeat(0, infinity, fun '--virtual-20--'/1, Obj).
 
 '--virtual-20--'(Obj) ->
     alternative([fun (O) -> final({32, 33}, O) end, fun (O) -> final({35, 126}, O) end], Obj).
 
-'-num-val-'(Obj) -> sequence([fun (O) -> final(37, O) end, fun '--virtual-21--'/1], Obj).
+'-num-val-'(Obj) ->
+    case sequence([fun (O) -> final(37, O) end, fun '--virtual-21--'/1], Obj) of
+        {ok, [_, Y2], O} -> {ok, Y2, O};
+        Err -> Err
+    end.
 
 '--virtual-21--'(Obj) ->
     alternative([fun '-bin-val-'/1, fun '-dec-val-'/1, fun '-hex-val-'/1], Obj).
@@ -255,11 +263,35 @@ string(B, _) when not is_binary(B) -> error({badarg, not_a_string});
 string(B, F) ->
     Obj = #obj{ptr = 0, bin = B, sz = byte_size(B)},
     case F(Obj) of
-        {ok, Xs, O} when O#obj.ptr =:= eof -> {ok, Xs, eof};
-        {ok, Xs, O} when O#obj.sz =:= O#obj.ptr -> {ok, Xs, 0};
-        {ok, Xs, O} -> {ok, Xs, O#obj.sz - O#obj.ptr};
+        {ok, Xs, O} -> rules_ok(Xs, O);
         {error, R} -> {error, R}
     end.
+
+rules_ok(Xs, #obj{sz = Sz, ptr = Ptr}) ->
+    {ok, fixup_rules(Xs), trailing_chars(Sz, Ptr)}.
+
+fixup_rules(Xs) ->
+    lists:filtermap(fun fixup_rule/1, Xs).
+
+fixup_rule({rule, Name, Deriv, Construct}) ->
+    {true, {rule, to_atom(Name), fixup_deriv(Deriv), fixup_construct(Construct)}};
+fixup_rule(_) ->
+    false.
+
+fixup_deriv({alt, [Alt]}) -> fixup_deriv(Alt);
+fixup_deriv({alt, Alts}) -> {alt, [fixup_deriv(A) || A <- Alts]};
+fixup_deriv({seq, [Seq]}) -> fixup_deriv(Seq);
+fixup_deriv({seq, Seqs}) -> {seq, [fixup_deriv(S) || S <- Seqs]};
+fixup_deriv({rep, [], D}) -> fixup_deriv(D);
+fixup_deriv({rep, [R], D}) -> {rep, R, fixup_deriv(D)};
+fixup_deriv(App) when is_binary(App) -> {app, to_atom(App)};
+fixup_deriv(Chars) when is_list(Chars)-> {chs, Chars}.
+
+fixup_construct({code, Code}) -> Code;
+fixup_construct(_) -> <<"Y">>.
+
+trailing_chars(_, eof) -> 0;
+trailing_chars(Sz, Ptr) -> Sz - Ptr.
 
 repeat(Min, Max, F, Obj) -> repeat(0, Min, minus1(Max), F, Obj, []).
 
@@ -383,13 +415,18 @@ peek_chars(#obj{bin = Bin, ptr = Ptr}, Num) ->
         error:badarg -> {error, {miss, eof}}
     end.
 
+to_atom(B) when is_binary(B) ->
+    binary_to_atom(B).
+
 squeeze(L) when is_list(L) ->
-    try binary:list_to_bin(re:replace(L, " +", "", [global]))
+    try binary:list_to_bin(string:trim(L, both, " \t"))
     catch error:badarg -> lists:flatten(L)
     end.
 
 rep_lo([]) -> 0;
+rep_lo([B]) when is_binary(B) -> binary_to_integer(B);
 rep_lo(L) when is_list(L) -> binary_to_integer(squeeze(L)).
 
 rep_hi([]) -> inf;
+rep_hi([B]) when is_binary(B) -> binary_to_integer(B);
 rep_hi(L) when is_list(L) -> binary_to_integer(squeeze(L)).
