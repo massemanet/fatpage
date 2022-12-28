@@ -1,17 +1,29 @@
-term   = list / cons / tuple / call / atom      ;;
+term     = ternary / list / cons / tuple / avar / string / number ;;
 
-list   = "[" *WS [terms] *WS "]"                ;;
+list     = *WS "[" *WS [terms] *WS "]"                ;; {list, Y4}
 
-cons   = "[" *WS terms *WS "|" *WS term *WS "]" ;;
+cons     = *WS "[" *WS terms *WS "|" *WS term *WS "]" ;; {cons, Y4, Y6}
 
-tuple  = "{" *WS [terms] *WS "}"                ;;
+tuple    = *WS "{" *WS [terms] *WS "}"                ;; {tuple, Y4}
 
-call   = atom "(" *WS [terms] *WS ")"           ;;
+ternary  = *WS cond *WS "?" *WS term *WS ":" *WS term ;; {ternary, Y2, Y6, Y10}
 
-terms  = term *WS *cterm                        ;;
+terms    = *WS term *WS *cterm                        ;; [Y2 | Y4]
 
-cterm  = "," *WS term                           ;;
+cterm    = *WS "," *WS term                           ;; Y4
 
-atom   = lcase *(ALPHA / DIGIT)                 ;;
+avar     = *WS (var / atom_var / str_var)             ;; Y2
 
-lcase  = %x97-122                               ;;
+cond     = var *WS op *WS term                        ;; {op, Y4, Y2, Y6}
+
+atom_var = "'" var "'"                                ;; {atom_var, Y3}
+
+str_var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
+
+var      = "Y" *DIGIT                                 ;; {var, Y3}
+
+number   = 1*DIGIT                                    ;; {number, Y}
+
+string   = ALPHA *(ALPHA / DIGIT / "-" / "_")         ;; {string, "Y"}
+
+op       = "==" / "!=" / "<" / ">" / "=<" / ">="      ;; 'Y'
