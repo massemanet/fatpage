@@ -2,12 +2,16 @@
 
 -export(
    [parse/1,
+    r2r/1,
     unroll/1,
     left_recursive/1,
     forms/2,
     pp/2]).
 
--define(DBG(Form, E), try (E) catch C:R -> erlang:display({C, R, Form}),"\n :( \n" end).
+-define(DBG(Form, E),
+        try (E)
+        catch C:R -> erlang:display({C, R, Form}),"\n :( \n"
+        end).
 
 pp(Forms, Filename) ->
     comment(Filename)++lists:flatmap(fun ppf/1, Forms).
@@ -22,38 +26,56 @@ unroll(Rules) ->
     erase(fatpage),
     unroll(Rules, []).
 
+r2r(Rules) ->
+    lists:map(fun reify/1, Rules).
+
 parse(String) when is_list(String) ->
-    lists:map(fun reify/1, parse_abnf(String)).
+    r2r(parse_abnf(String)).
 
 parse_abnf(String) ->
-    case erlang:module_loaded(fatpage_rfc5234) of
-        true -> fatpage_rfc5234:string(String);
-        false -> bootstrap(String)
+    Parsers = [fatpage_rfc5234, fatpage_bootstrap_abnf, abnfc_rfc4234],
+    case lists:filter(fun is_available/1, Parsers) of
+        [] -> error({no_parser});
+        [M|_] -> parse(M, String)
     end.
 
-bootstrap(String) ->
+is_available(Mod) ->
+    [] =/= [M || {M, _, _} <- code:all_available(), M =:= atom_to_list(Mod)].
+
+parse(abnfc_rfc4234, String) ->
     {ok, {rulelist, undefined, Rules}, []} = abnfc_rfc4234:decode(rulelist, String),
-    Rules.
+    Rules;
+parse(Mod, String) ->
+    {ok, Rs, 0} = Mod:string(String),
+    Rs.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(deriv, {type, x = {}, ds}).
--record(rule, {name, deriv, code = nocode}).
+-record(rule, {name, deriv, code = <<>>}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% rewrite bootstrap parser output to internal form
 
 reify(D) when is_record(D, deriv) -> D;
-reify(Ds) when is_list(Ds)        -> lists:map(fun reify/1, Ds);
+reify(Ds) when is_list(Ds) -> lists:map(fun reify/1, Ds);
+
+%% fatpage_bootstrap terms
+reify({rule, N, D, C}) -> #rule{name = N, code = C, deriv = reify(D)};
+reify({seq, Seqs})     -> #deriv{type = seq, ds = reify(Seqs)};
+reify({alt, Alts})     -> #deriv{type = alt, ds = reify(Alts)};
+reify({rep, Rep, D})   -> #deriv{type = rep, x = Rep, ds = reify(D)};
+reify({app, App})      -> #deriv{type = final, x = appl, ds = App};
+reify({chs, Chs})      -> #deriv{type = final, x = char, ds = Chs};
+
+%% abnfc terms
 reify({rule, def_rule, N, D, C})  -> #rule{name = N, code = C, deriv = reify(D)};
 reify({rulename, Name})           -> #deriv{type = final, x = appl, ds = Name};
-reify({alt, Alts})                -> #deriv{type = alt, ds = reify(Alts)};
 reify({char_alt, Alts})           -> #deriv{type = alt, ds = reify(Alts)};
-reify({seq, Seqs})                -> #deriv{type = seq, ds = reify(Seqs)};
 reify({char_seq, Seqs})           -> #deriv{type = seq, ds = reify(Seqs)};
 reify({repeat, Min, Max, Rep})    -> #deriv{type = rep, x = {Min, Max}, ds = reify(Rep)};
-reify({char_val, C0})             -> #deriv{type = final, x = char, ds = {C0}};
-reify({char_range, C1, C2})       -> #deriv{type = final, x = char, ds = {C1, C2}}.
+reify({char_val, C0})             -> #deriv{type = final, x = char, ds = <<C0:8>>};
+reify({char_range, C1, C2})       -> #deriv{type = final, x = char, ds = {<<C1:8>>, <<C2:8>>}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% unroll nested rules
@@ -137,7 +159,7 @@ get_name(Deriv) ->
     end.
 
 make_name(I) ->
-    flat("-virtual-~p-", [I]).
+    list_to_atom(flat("-virtual-~p-", [I])).
 
 flat(F, As) ->
     lists:flatten(io_lib:format(F, As)).
@@ -186,10 +208,24 @@ fixpoint({Rules, Final}) ->
     end.
 
 predefined() ->
-    [{'EOF', non_nullable},
+    [
+     {'ALPHA', non_nullable},
+     {'BIT', non_nullable},
      {'CR', non_nullable},
+     {'CR', non_nullable},
+     {'CRLF', non_nullable},
+     {'DIGIT', non_nullable},
+     {'DQUOTE', non_nullable},
+     {'EOF', non_nullable},
+     {'HEXDIG', non_nullable},
+     {'HTAB', non_nullable},
      {'LF', non_nullable},
-     {'WS', non_nullable}].
+     {'LF', non_nullable},
+     {'SP', non_nullable},
+     {'VCHAR', non_nullable},
+     {'WS', non_nullable},
+     {'WSP', non_nullable}].
+
 
 fix([], Final, ORs)                              -> {lists:usort(ORs), lists:usort(Final)};
 fix([#rule{name = N, deriv = D}|Rs], Final, ORs) -> fix([{N, D}|Rs], Final, ORs);

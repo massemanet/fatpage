@@ -39,7 +39,7 @@ rule(Line, Name, Code, Type, X, Sub) ->
 rule(Name, Code, Type, X, Sub) ->
     stx(func, {rule_name(Name), [stx('Obj')], [], [rule_body(Code, Type, X, Sub)]}).
 
-rule_body(nocode, Type, X, Sub) -> fcall(Type, X, Sub);
+rule_body(<<>>, Type, X, Sub) -> fcall(Type, X, Sub);
 rule_body(Code, Type, X, Sub) -> fcase(Code, Type, X, Sub).
 
 fcase(Code, Type, X, Deriv) ->
@@ -117,13 +117,15 @@ final(#deriv{type=final, x=appl, ds=Name}) -> stx(rule_fun, Name).
 cfun([X]) ->
     stx(fun_, [{[stx('O')], [], [call_final(X, stx('O'))]}]).
 
-call_final({C0}, Var) ->
-    stx(call, {final, [stx(C0), Var]});
-call_final({C1, C2}, Var) ->
+call_final(Chars, Var) when is_list(Chars) ->
+    stx(call, {final, [stx(make_chars(Chars)), Var]});
+call_final({<<C1:8>>, <<C2:8>>}, Var) ->
     stx(call, {final, [stx(tuple, [stx(C1), stx(C2)]), Var]}).
 
 rule_name(N) ->
     lists:flatten(io_lib:format("-~s-", [N])).
+
+make_chars(L) -> binary:list_to_bin(L).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Syntax manipulation
@@ -131,7 +133,7 @@ rule_name(N) ->
 -define(IS_TREE(T), tree =:= element(1, T)).
 -define(IS_UPC(I), $A =< I, I =< $Z; $_ == I).
 -define(IS_CHAR(I), $ =< I, I =< $~).
-%% auto detect type (for var, int, and atom)
+%% auto detect type (for var, int, bin, and atom)
 stx(T) when ?IS_TREE(T) ->
     T;
 stx(A) when is_atom(A) ->
@@ -141,7 +143,9 @@ stx([I|_] = S) when ?IS_UPC(I) ->
 stx([I|_] = S) when ?IS_CHAR(I) ->
     stx(atom, S);
 stx(I) when is_integer(I) ->
-    stx(integer, I).
+    stx(integer, I);
+stx(B) when is_binary(B) ->
+    stx(bin, binary_to_list(B)).
 
 %% aliases
 stx(bin_fields, Vs) ->
@@ -160,8 +164,6 @@ stx(atom, A) ->
     erl_syntax:atom(A);
 stx(bin, Vs) ->
     erl_syntax:binary(stx(bin_fields, Vs));
-stx(bin_field, V) ->
-    erl_syntax:binary_field(stx(V));
 stx(integer, I) when is_integer(I) ->
     erl_syntax:integer(I);
 stx(list, {H, T}) when is_list(H) ->
@@ -190,6 +192,8 @@ stx(var, V) ->
 %% syntax elements
 stx(attr, {N, As}) ->
     erl_syntax:attribute(stx(N), As);
+stx(bin_field, V) ->
+    erl_syntax:binary_field(stx(V));
 stx(clause, {Args, Guard, Body}) ->
     erl_syntax:clause(Args, Guard, Body);
 stx(fa, {N, A}) ->
