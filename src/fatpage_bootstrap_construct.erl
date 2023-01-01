@@ -4,9 +4,7 @@
 
 -module(fatpage_bootstrap_construct).
 
--export([file/1, string/1]).
-
-file(Filename) -> file(Filename, fun '-term-'/1).
+-export([string/1]).
 
 string(String) -> string(String, fun '-term-'/1).
 
@@ -167,7 +165,7 @@ string(String) -> string(String, fun '-term-'/1).
 '-var-'(Obj) ->
     case sequence([fun (O) -> final(<<89>>, O) end,
                    fun '--virtual-5--'/1], Obj) of
-        {ok, [_, Y2], O} -> {ok, {var, Y2}, O};
+        {ok, Y, O} -> {ok, {var, atomize(Y)}, O};
         Err -> Err
     end.
 
@@ -191,12 +189,6 @@ string(String) -> string(String, fun '-term-'/1).
 
 -record(obj, {ptr, bin, sz}).
 
-file(Filename, F) ->
-    case file:read_file(Filename) of
-        {ok, B} -> string(B, F);
-        {error, R} -> error({unreadable, R})
-    end.
-
 string(L, F) when is_list(L) -> string(list_to_binary(L), F);
 string(B, _) when not is_binary(B) -> error({badarg, not_a_string});
 string(B, F) ->
@@ -207,20 +199,6 @@ string(B, F) ->
         {ok, Xs, O} -> {ok, Xs, O#obj.sz - O#obj.ptr};
         {error, R} -> {error, R}
     end.
-
-alternative(_, #obj{ptr = eof}) -> {error, eof};
-alternative(Fs, Obj) -> alternative(Fs, Obj, []).
-
-sequence(_, #obj{ptr = eof}) -> {error, eof};
-sequence(Fs, Obj) -> sequence(Fs, Obj, []).
-
-final(Bin, Obj) when is_binary(Bin) ->
-    case peek_chars(Obj, byte_size(Bin)) of
-        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
-        E -> {error, {miss, E, Bin}}
-    end.
-
-repeat(Min, Max, F, Obj) -> repeat(0, Min, minus1(Max), F, Obj, []).
 
 '-WS-'(Obj) ->
     case peek_chars(Obj, 1) of
@@ -244,6 +222,14 @@ repeat(Min, Max, F, Obj) -> repeat(0, Min, minus1(Max), F, Obj, []).
         Err -> Err
     end.
 
+alternative(_, #obj{ptr = eof}) -> {error, eof};
+alternative(Fs, Obj) -> alternative(Fs, Obj, []).
+
+sequence(_, #obj{ptr = eof}) -> {error, eof};
+sequence(Fs, Obj) -> sequence(Fs, Obj, []).
+
+repeat(Min, Max, F, Obj) -> repeat(0, Min, minus1(Max), F, Obj, []).
+
 alternative([], _Obj, Es) -> {error, {fail, Es}};
 alternative([F | Fs], Obj, Es) ->
     case F(Obj) of
@@ -256,6 +242,20 @@ sequence([F | Fs], Obj, Xs) ->
     case F(Obj) of
         {ok, X, O} -> sequence(Fs, O, [X | Xs]);
         {error, R} -> {error, {unexpected, R}}
+    end.
+
+repeat(N, Mn, Mx, F, Obj, Xs) ->
+    case F(Obj) of
+        {ok, X, O} when N =:= Mx -> {ok, lists:reverse([X | Xs]), O};
+        {ok, X, O} -> repeat(N + 1, Mn, Mx, F, O, [X | Xs]);
+        {error, R} when N < Mn -> {error, {too_few, R}};
+        {error, _R} -> {ok, lists:reverse(Xs), Obj}
+    end.
+
+final(Bin, Obj) when is_binary(Bin) ->
+    case peek_chars(Obj, byte_size(Bin)) of
+        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
+        E -> {error, {miss, E, Bin}}
     end.
 
 bump_ptr(#obj{ptr = Ptr} = Obj, N) ->
@@ -277,14 +277,6 @@ peek_chars(#obj{bin = Bin, ptr = Ptr}, 1) ->
                 B2 -> error({unhandled_utf8, B1, B2})
             end;
         B0 -> error({unhandled_utf8, B0})
-    end.
-
-repeat(N, Mn, Mx, F, Obj, Xs) ->
-    case F(Obj) of
-        {ok, X, O} when N =:= Mx -> {ok, lists:reverse([X | Xs]), O};
-        {ok, X, O} -> repeat(N + 1, Mn, Mx, F, O, [X | Xs]);
-        {error, R} when N < Mn -> {error, {too_few, R}};
-        {error, _R} -> {ok, lists:reverse(Xs), Obj}
     end.
 
 minus1(inf) -> infinity;

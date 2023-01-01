@@ -51,21 +51,37 @@ erl(Filename) ->
     OutFile.
 
 pp(Filename) ->
-    fatpage_gen:pp(forms(Filename), Filename).
+    fatpage_pp:forms(forms(Filename), Filename).
 
 forms(Filename) ->
     fatpage_gen:forms(mod(Filename), unroll(Filename)).
 
 left_recursive(Filename) ->
-    fatpage_gen:left_recursive(unroll(Filename)).
+    fatpage_refine:left_recursive(unroll(Filename)).
 
 unroll(Filename) ->
-    fatpage_gen:unroll(parse(Filename)).
+    fatpage_refine:unroll(parse(Filename)).
 
 parse(Bin) when is_binary(Bin) ->
     parse(binary_to_list(Bin));
 parse(String) when is_list(String) ->
-    fatpage_gen:parse(subject(String)).
+    fatpage_parse:parse(subject(String)).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% generate beam and write .beam file
+
+out_file(Filename, Ext) ->
+    Dir = filename:dirname(Filename),
+    Base = filename:basename(Filename, ".abnf"),
+    flat("~s/~s.~s", [Dir, Base, Ext]).
+
+write_file(OutFile, String) ->
+    {ok, FD} = file:open(OutFile, [write]),
+    io:fwrite(FD, "~s", [String]),
+    file:close(FD).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% utils
 
 subject(String) ->
     case filelib:is_regular(String) of
@@ -76,21 +92,8 @@ subject(String) ->
 lift(Tag, {Tag, V}) -> V;
 lift(Tag, {T, _}) -> error({tag_mismatch, Tag, T}).
 
-mod(Filename) ->
-    filename:basename(Filename, ".abnf").
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% generate beam and write .beam file
-
-out_file(Filename, Ext) ->
-    Dir = filename:dirname(Filename),
-    Base = filename:basename(Filename, ".abnf"),
-    flat("~s/~s.~s", [Dir, Base, Ext]).
-
 flat(F, As) ->
     lists:flatten(io_lib:format(F, As)).
 
-write_file(OutFile, String) ->
-    {ok, FD} = file:open(OutFile, [write]),
-    io:fwrite(FD, "~s", [String]),
-    file:close(FD).
+mod(Filename) ->
+    filename:basename(Filename, ".abnf").

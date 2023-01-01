@@ -1,82 +1,134 @@
-%% -*- mode: erlang; erlang-indent-level: 4 -*-
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% This is not a callable module. The loader includes functions to
+%%% resolve calls from here at compile time.
+
 -module(fatpage_preamble).
 
 %% API
--export([file/2, string/2]).
+-export(
+   [file/2,
+    string/2]).
 
 %% contructor primitives
--export([squeeze/1]).
+-export(
+   [atomize/1,
+    squeeze/1]).
 
-%% combinators (exported to keep compler happy)
--export([repeat/4, alternative/2, sequence/2, final/2]).
+%% combinators (exported to keep compiler happy)
+-export(
+   [alternative/2,
+    final/2,
+    repeat/4,
+    sequence/2]).
 
 %% core rules
 -export(
-   ['-ALPHA-'/1, '-BIT-'/1, '-CR-'/1, '-CRLF-'/1, '-DIGIT-'/1, '-DQUOTE-'/1, '-HEXDIG-'/1, '-HTAB-'/1, '-LF-'/1, '-SP-'/1, '-VCHAR-'/1, '-WSP-'/1]).
+   ['-ALPHA-'/1,
+    '-BIT-'/1,
+    '-CR-'/1,
+    '-CRLF-'/1,
+    '-DIGIT-'/1,
+    '-DQUOTE-'/1,
+    '-HEXDIG-'/1,
+    '-HTAB-'/1,
+    '-LF-'/1,
+    '-SP-'/1,
+    '-VCHAR-'/1,
+    '-WSP-'/1]).
 
 %% extra builtin rules
 -export(
-   ['-EOF-'/1, '-WS-'/1]).
+   ['-EOF-'/1,
+    '-WS-'/1]).
 
 -record(obj, {ptr, bin, sz}).
 
 '-ALPHA-'(Obj) ->  % A-Z / a-z
-    F = fun(C) when $A =< C, C =< $Z -> true;
-           (C) when $a =< C, C =< $z -> true;
-           (_) -> false
-        end,
-    final(F, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$A>> =< C, C =< <<$Z>>;
+                    <<$a>> =< C, C =< <<$z>> -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, alpha, C}};
+        Err -> Err
+    end.
 
 '-BIT-'(Obj) ->
-    final([$0, $1], Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$0>> =:= C;
+                    <<$1>> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, bit, C}};
+        Err -> Err
+    end.
 
 '-CR-'(Obj) ->
-    final($\n, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$\n>> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, cr, C}};
+        Err -> Err
+    end.
 
 '-CRLF-'(Obj) ->
-    case final($\n, Obj) of
-        {error, Error} ->
-            {error, Error};
-        {ok, <<"\n">>, O0} ->
-            case final($\r, O0) of
-                {ok, <<"\r">>, O} -> {ok, <<"\n\r">>, O};
-                {error, _} -> {ok, <<"\n">>, O0}
-            end
+    case peek_chars(Obj, 2) of
+        {C, 2} when <<$\n, $\r>> =:= C -> {ok, C, bump_ptr(Obj, 2)};
+        {C, 2} -> {error, {miss, crlf, C}};
+        Err -> Err
     end.
 
 '-DIGIT-'(Obj) ->
-    F = fun(C) when $0 =< C, C =< $9 -> true;
-           (_) -> false
-        end,
-    final(F, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$0>> =< C, C =< <<$9>> -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, digit, C}};
+        Err -> Err
+    end.
 
 '-DQUOTE-'(Obj) ->
-    final($\", Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$\">> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, dquote, C}};
+        Err -> Err
+    end.
 
 '-HEXDIG-'(Obj) ->
-    F = fun(C) when $0 =< C, C =< $9 -> true;
-           (C) when $A =< C, C =< $F -> true;
-           (_) -> false
-        end,
-    final(F, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$A>> =< C, C =< <<$F>>;
+                    <<$a>> =< C, C =< <<$f>>;
+                    <<$0>> =< C, C =< <<$9>> -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, hexdig, C}};
+        Err -> Err
+    end.
 
 '-HTAB-'(Obj) ->
-    final($\t, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$\t>> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, htab, C}};
+        Err -> Err
+    end.
     
 '-LF-'(Obj) ->
-    final($\r, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$\t>> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, lf, C}};
+        Err -> Err
+    end.
 
 %% '-LWSP-'(Obj)           =  *(WSP / CRLF WSP)
 %% '-OCTET-'(Obj)          =  %x00-FF
 
 '-SP-'(Obj) ->
-    final($ , Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$ >> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, sp, C}};
+        Err -> Err
+    end.
 
 '-VCHAR-'(Obj) -> % visible (printing) characters
-    final({$!, $~}, Obj).
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$!>> =< C, C =< <<$~>> -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, vchar, C}};
+        Err -> Err
+    end.
 
 '-WSP-'(Obj) -> % whitespace
-    final([$ , $\t], Obj).
+    '-WS-'(Obj).
 
 '-EOF-'(#obj{ptr = Ptr, sz = Z} = Obj) ->
     if Z == Ptr -> {ok, eof, Obj#obj{ptr = eof}};
@@ -84,13 +136,21 @@
        true -> {error, past_eof}
     end.
 
-'-WS-'(Obj) ->
-    final([$ , $\t], Obj).
+'-WS-'(Obj) -> % whitespace
+    case peek_chars(Obj, 1) of
+        {C, 1} when <<$ >> =:= C;
+                    <<$\t>> =:= C -> {ok, C, bump_ptr(Obj, 1)};
+        {C, 1} -> {error, {miss, ws, C}};
+        Err -> Err
+    end.
 
 squeeze(L) when is_list(L) ->
-    try binary:list_to_bin(L)
-    catch error:badarg -> lists:flatten(L)
-    end.
+    binary:list_to_bin(L);
+squeeze(X) ->
+    X.
+
+atomize(X) ->
+    binary_to_atom(squeeze(X)).
 
 file(Filename, F) ->
     case file:read_file(Filename) of
@@ -151,61 +211,28 @@ sequence([F|Fs], Obj, Xs) ->
         {error, R} -> {error, {unexpected, R}}
     end.
 
-final(CFUN, Obj) when is_function(CFUN, 1) ->
-    case peek_chars(Obj, 1) of
-        {[Char], Bin, Sz} ->
-            case CFUN(Char) of
-                true -> {ok, Bin, bump_ptr(Obj, Sz)};
-                false -> {error, {miss, Char}}
-            end;
-        E -> {error, {miss, E}}
-    end;
-final(Char, Obj) when is_integer(Char) ->
-    case peek_chars(Obj, 1) of
-        {[Char], Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
-        E -> {error, {miss, E}}
-    end;
-final({C1, C2}, Obj) when is_integer(C1), is_integer(C2) ->
-    case peek_chars(Obj, 1) of
-        {[C0], Bin, Sz} when C1 =< C0, C0 =< C2 ->
-            {ok, Bin, bump_ptr(Obj, Sz)};
-        E ->
-            {error, {miss, E, C1, C2}}
-    end;
-final(Cs, Obj) when is_list(Cs) ->
-    case peek_chars(Obj, 1) of
-        {[C], Bin, Sz} ->
-            case lists:member(C, Cs) of
-                true -> {ok, Bin, bump_ptr(Obj, Sz)};
-                false -> {error, {miss, [C]}}
-            end;
-        E ->
-            {error, {miss, E, Cs}}
+final(Bin, Obj) when is_binary(Bin) ->
+    case peek_chars(Obj, byte_size(Bin)) of
+        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
+        E -> {error, {miss, E, Bin}}
     end.
 
-peek_chars(#obj{ptr = Ptr, sz = Sz}, Num) when Sz < Ptr+Num ->
+peek_chars(#obj{ptr = Ptr, sz = Sz}, Num) when Sz < Ptr + Num ->
     {error, eof};
+peek_chars(#obj{bin = Bin, ptr = Ptr}, 2) ->
+    case binary:part(Bin, {Ptr, 2}) of
+        <<0:1, _:7, 0:1, _:7>> = B -> {B, 2};
+        B -> error({unhandled_utf8, B})
+    end;
 peek_chars(#obj{bin = Bin, ptr = Ptr}, 1) ->
     case binary:part(Bin, {Ptr, 1}) of
-        <<0:1, C0:7>> = B ->
-            {[C0], B, 1};
-        <<6:3, C1:5>> = B1 ->
+        <<0:1, _:7>> = B -> {B, 1};
+        <<6:3, _:5>> = B1 ->
             case binary:part(Bin, {Ptr+1, 1}) of
-                <<2:2,C2:6>> = B2 ->
-                    {[(C1 bsl 6)+C2], <<B1/binary, B2/binary>>, 2};
-                B2 ->
-                    error({unhandled_utf8, B1, B2})
+                <<2:2, _:6>> = B2 -> {<<B1/binary, B2/binary>>, 2};
+                B2 -> error({unhandled_utf8, B1, B2})
             end;
-        B0 ->
-            error({unhandled_utf8, B0})
-    end;
-peek_chars(#obj{bin = Bin, ptr = Ptr}, Num) ->
-    try unicode:characters_to_list(B = binary:part(Bin, {Ptr, Num})) of
-        Chars when Num =:= length(Chars) -> {Chars, B, Num};
-        {incomplete, H, T} -> error({unhandled_utf8, H, T});
-        Chars -> error({unhandled_utf8, Chars})
-    catch
-        error:badarg -> {error, {miss, eof}}
+        B0 -> error({unhandled_utf8, B0})
     end.
 
 bump_ptr(#obj{ptr = Ptr} = Obj, N) -> Obj#obj{ptr = Ptr+N}.

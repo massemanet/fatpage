@@ -63,8 +63,11 @@ string(String) -> string(String, fun '-rulelist-'/1).
 '-c-nl-'(Obj) -> alternative([fun '-construct-'/1, fun '-comment-'/1, fun '-CRLF-'/1], Obj).
 
 '-construct-'(Obj) ->
-    case sequence([fun (O) -> final(59, O) end, fun(O) -> final(59, O) end, fun '--virtual-8--'/1, fun '-CRLF-'/1], Obj) of
-        {ok, [_, _, Y3, _], O} -> {ok, {code, squeeze(Y3)}, O};
+    case sequence([fun (O) -> final(59, O) end,
+                   fun(O) -> final(59, O) end,
+                   fun '--virtual-8--'/1,
+                   fun '-CRLF-'/1], Obj) of
+        {ok, [_, _, Y3, _], O} -> {ok, {code, [squeeze(Y3)]}, O};
         Err -> Err
     end.
 
@@ -419,9 +422,7 @@ to_atom(B) when is_binary(B) ->
     binary_to_atom(B).
 
 squeeze(L) when is_list(L) ->
-    try binary:list_to_bin(string:trim(L, both, " \t"))
-    catch error:badarg -> lists:flatten(L)
-    end.
+    binary:list_to_bin(L).
 
 rep_lo([]) -> 0;
 rep_lo([B]) when is_binary(B) -> binary_to_integer(B);

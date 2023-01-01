@@ -1,6 +1,6 @@
 file           = *unicodeish-eol
 
-unicodeish-eol = runicodeish eol : Y1.
+unicodeish-eol = runicodeish eol ;; Y1
 
 runicodeish    = *unicodeish
 

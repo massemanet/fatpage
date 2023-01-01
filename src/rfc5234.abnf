@@ -32,7 +32,11 @@ repetition     =  [repeat] element                       ;; {rep, Y1, Y2}
 
 repeat         =  rep-star / rep-dig
 
-rep-star       =  *DIGIT "*" *DIGIT                      ;; {Y1, Y3}
+rep-star       =  rep-min "*" rep-max                    ;; {Y1, Y3}
+
+rep-min        =  *DIGIT                                 ;; #Y == 0 ? 0 : Y
+
+rep-max        =  *DIGIT                                 ;; #Y == 0 ? inf : Y
 
 rep-dig        =  1*DIGIT                                ;; {Y, Y}
 

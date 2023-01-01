@@ -20,7 +20,7 @@ atom_var = "'" var "'"                                ;; {atom_var, Y3}
 
 str_var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
 
-var      = "Y" *DIGIT                                 ;; {var, Y3}
+var      = "Y" *DIGIT                                 ;; {var, "Y"}
 
 number   = 1*DIGIT                                    ;; {number, Y}
 
