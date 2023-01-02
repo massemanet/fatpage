@@ -4,7 +4,7 @@
 -export(
    [stx/1,
     set_pos/2,
-    local_calls/1,
+    local/2,
     rev/1,
     rev_forms/1]).
 
@@ -101,24 +101,15 @@ stx({op, Op}) ->
 %%stx({mktuple, X}) ->
 %%    erl_syntax:make_tree(tuple, [X]);
 
-local_calls(Forms) ->
-    FOLD = fun(Form, Acc) -> rev(fold(fun local_calls/2, Acc, stx(Form))) end,
-    lists:foldl(FOLD, [], Forms).
+local(calls, Forms) -> fold(fun local_calls/2, [], Forms);
+local(funcs, Forms) -> fold(fun local_funcs/2, [], Forms).
 
-local_calls(Tree, O) ->
-    case erl_syntax:type(Tree) of
-        application ->
-            [{erl_syntax:atom_value(erl_syntax:application_operator(Tree)),
-             length(erl_syntax:application_arguments(Tree))}|O];
-        implicit_fun ->
-            N = erl_syntax:implicit_fun_name(Tree),
-            [{erl_syntax:atom_value(erl_syntax:arity_qualifier_body(N)),
-             erl_syntax:integer_value(erl_syntax:arity_qualifier_argument(N))}|O];
-        _ -> O
-    end.
+fold(Fun, Acc, T) when is_tuple(T) -> fold(Fun, Fun(T, Acc), tuple_to_list(T));
+fold(Fun, Acc, L) when is_list(L) -> lists:foldl(folder(Fun), Fun(L, Acc), L);
+fold(Fun, Acc, X) -> Fun(X, Acc).
 
-fold(F, A, Forms) ->
-    erl_syntax_lib:fold(F, A, Forms).
+folder(Fun) ->
+    fun(E, A) -> fold(Fun, Fun(E, A), E) end.
 
 set_pos(Stx, Line) ->
     erl_syntax:set_pos(Stx, Line).
@@ -128,3 +119,31 @@ rev(Forms) ->
 
 rev_forms(Forms) ->
     erl_syntax:revert_forms(Forms).
+
+local_calls(Tree, O) ->
+    try is_tuple(Tree) andalso erl_syntax:type(Tree) of
+        application ->
+            App = erl_syntax:application_operator(Tree),
+            Arity = length(erl_syntax:application_arguments(Tree)),
+            case erl_syntax:type(App) of
+                atom -> [{erl_syntax:atom_value(App), Arity}|O];
+                _ -> O
+            end;
+        implicit_fun ->
+            N = erl_syntax:implicit_fun_name(Tree),
+            [{erl_syntax:atom_value(erl_syntax:arity_qualifier_body(N)),
+             erl_syntax:integer_value(erl_syntax:arity_qualifier_argument(N))}|O];
+        _ -> O
+    catch
+        _:_ -> O
+    end.
+
+local_funcs(Tree, O) ->
+    try is_tuple(Tree) andalso erl_syntax:type(Tree) of
+        function ->
+            [{erl_syntax:atom_value(erl_syntax:function_name(Tree)),
+              erl_syntax:function_arity(Tree)}|O];
+        _ -> O
+    catch
+        _:_ -> O
+    end.

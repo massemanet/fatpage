@@ -158,7 +158,7 @@ is_record(_) -> false.
 %% resolve generated code from preamble
 
 resolve(Fs, PreambleFunctions) ->
-    case lists:filter(mk_is_unknown(Fs), stx_local_calls(Fs)) of
+    case local_calls(Fs) -- local_funcs(Fs) of
         [] ->
             Fs;
         Unknown ->
@@ -179,18 +179,11 @@ do_resolve([U|Unknown], PreambleFunctions, Resolved) ->
             end
     end.
 
-mk_is_unknown(Fs) ->
-    KnownFunctions = known_functions(Fs),
-    fun(FA)-> not lists:member(FA, KnownFunctions) end.
+local_calls(Fs) ->
+    lists:usort(stx_local(calls, Fs)).
 
-known_functions(Fs) ->
-    local_functions(Fs) ++ builtin_functions().
-
-local_functions(Fs) ->
-    lists:foldl(fun local_function/2, [], Fs).
-
-local_function(?FUNCTION(N, A), B) -> [{N, A}|B];
-local_function(_, B) -> B.
+local_funcs(Fs) ->
+    stx_local(funcs, Fs) ++ builtin_functions().
 
 builtin_functions() ->
     erlang:module_info(exports).
@@ -198,8 +191,8 @@ builtin_functions() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% aliases
 
-stx_local_calls(Forms) ->
-    fatpage_syntax:local_calls(Forms).
+stx_local(What, Forms) ->
+    fatpage_syntax:local(What, Forms).
 
 stx_pos(Form, Line) ->
     fatpage_syntax:set_pos(
