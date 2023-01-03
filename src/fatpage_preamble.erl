@@ -12,6 +12,7 @@
 %% contructor primitives
 -export(
    [atomize/1,
+    numerize/2,
     squeeze/1]).
 
 %% combinators (exported to keep compiler happy)
@@ -40,8 +41,6 @@
 -export(
    ['-EOF-'/1,
     '-WS-'/1]).
-
--record(obj, {ptr, bin, sz}).
 
 '-ALPHA-'(Obj) ->  % A-Z / a-z
     case peek_chars(Obj, 1) of
@@ -130,9 +129,9 @@
 '-WSP-'(Obj) -> % whitespace
     '-WS-'(Obj).
 
-'-EOF-'(#obj{ptr = Ptr, sz = Z} = Obj) ->
-    if Z == Ptr -> {ok, eof, Obj#obj{ptr = eof}};
-       Ptr < Z -> {error, not_eof};
+'-EOF-'(#{ptr := Ptr, sz := Sz} = Obj) ->
+    if Sz == Ptr -> {ok, eof, Obj#{ptr => eof}};
+       Ptr < Sz -> {error, not_eof};
        true -> {error, past_eof}
     end.
 
@@ -152,6 +151,9 @@ squeeze(X) ->
 atomize(X) ->
     binary_to_atom(squeeze(X)).
 
+numerize(hex, N) when is_list(N) ->
+    erlang:list_to_integer(binary_to_list(squeeze(N)), 16).
+
 file(Filename, F) ->
     case file:read_file(Filename) of
         {ok, B} -> string(B, F);
@@ -163,11 +165,10 @@ string(L, F) when is_list(L) ->
 string(B, _) when not is_binary(B) ->
     error({badarg, not_a_string});
 string(B, F) ->
-    Obj = #obj{ptr = 0, bin = B, sz = byte_size(B)},
+    Obj = #{ptr => 0, bin => B, sz => byte_size(B)},
     case F(Obj) of
-        {ok, Xs, O} when O#obj.ptr =:= eof -> {ok, Xs, eof};
-        {ok, Xs, O} when O#obj.sz =:= O#obj.ptr -> {ok, Xs, 0};
-        {ok, Xs, O} -> {ok, Xs, O#obj.sz-O#obj.ptr};
+        {ok, Xs, #{ptr := eof}} -> {ok, Xs, eof};
+        {ok, Xs, #{sz := Sz, ptr := Ptr}} -> {ok, Xs, Sz-Ptr};
         {error, R} -> {error, R}
     end.
 
@@ -182,10 +183,10 @@ repeat(N, Mn, Mx, F, Obj, Xs) ->
         {error, _R}              -> {ok, lists:reverse(Xs), Obj}
     end.
 
-minus1(infinity) -> infinity;
+minus1(inf) -> inf;
 minus1(I) -> I-1.
 
-alternative(_, #obj{ptr = eof}) ->
+alternative(_, #{ptr := eof}) ->
     {error, eof};
 alternative(Fs, Obj) ->
     alternative(Fs, Obj, []).
@@ -198,7 +199,7 @@ alternative([F|Fs], Obj, Es) ->
         {error, E} -> alternative(Fs, Obj, [E|Es])
     end.
 
-sequence(_, #obj{ptr = eof}) ->
+sequence(_, #{ptr := eof}) ->
     {error, eof};
 sequence(Fs, Obj) -> 
     sequence(Fs, Obj, []).
@@ -213,18 +214,18 @@ sequence([F|Fs], Obj, Xs) ->
 
 final(Bin, Obj) when is_binary(Bin) ->
     case peek_chars(Obj, byte_size(Bin)) of
-        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
+        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)}; 
         E -> {error, {miss, E, Bin}}
     end.
 
-peek_chars(#obj{ptr = Ptr, sz = Sz}, Num) when Sz < Ptr + Num ->
+peek_chars(#{ptr := Ptr, sz := Sz}, Num) when Sz < Ptr + Num ->
     {error, eof};
-peek_chars(#obj{bin = Bin, ptr = Ptr}, 2) ->
+peek_chars(#{bin := Bin, ptr := Ptr}, 2) ->
     case binary:part(Bin, {Ptr, 2}) of
         <<0:1, _:7, 0:1, _:7>> = B -> {B, 2};
         B -> error({unhandled_utf8, B})
     end;
-peek_chars(#obj{bin = Bin, ptr = Ptr}, 1) ->
+peek_chars(#{bin := Bin, ptr := Ptr}, 1) ->
     case binary:part(Bin, {Ptr, 1}) of
         <<0:1, _:7>> = B -> {B, 1};
         <<6:3, _:5>> = B1 ->
@@ -235,4 +236,5 @@ peek_chars(#obj{bin = Bin, ptr = Ptr}, 1) ->
         B0 -> error({unhandled_utf8, B0})
     end.
 
-bump_ptr(#obj{ptr = Ptr} = Obj, N) -> Obj#obj{ptr = Ptr+N}.
+bump_ptr(Obj, N) ->
+    maps:update_with(ptr, fun(Ptr) -> Ptr+N end, Obj).

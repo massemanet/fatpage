@@ -5,8 +5,7 @@
    [stx/1,
     set_pos/2,
     local/2,
-    rev/1,
-    rev_forms/1]).
+    revert/1]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Syntax manipulation
@@ -60,6 +59,8 @@ stx({list, L}) when is_list(L) ->
     erl_syntax:list(stx(L));
 stx({tuple, L}) when is_list(L) ->
     erl_syntax:tuple(stx(L));
+stx({utf8, Bin}) when is_binary(Bin) ->
+    erl_syntax:binary([stx(I) || I <- binary_to_list(Bin)]);
 
 %% expressions
 stx({call, {F, Args}}) ->
@@ -114,11 +115,8 @@ folder(Fun) ->
 set_pos(Stx, Line) ->
     erl_syntax:set_pos(Stx, Line).
 
-rev(Forms) ->
-    erl_syntax:revert(Forms).
-
-rev_forms(Forms) ->
-    erl_syntax:revert_forms(Forms).
+revert(Forms) ->
+    [erl_syntax:revert(F) || F <- Forms].
 
 local_calls(Tree, O) ->
     try is_tuple(Tree) andalso erl_syntax:type(Tree) of

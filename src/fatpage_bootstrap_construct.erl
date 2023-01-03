@@ -279,7 +279,7 @@ peek_chars(#obj{bin = Bin, ptr = Ptr}, 1) ->
         B0 -> error({unhandled_utf8, B0})
     end.
 
-minus1(inf) -> infinity;
+minus1(inf) -> inf;
 minus1(I) -> I - 1.
 
 squeeze(L) when is_list(L) ->

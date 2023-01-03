@@ -1,4 +1,4 @@
-term     = ternary / list / cons / tuple / avar / string / number ;;
+term     = ternary / list / cons / tuple / avar / string / number
 
 list     = *WS "[" *WS [terms] *WS "]"                ;; {list, Y4}
 
@@ -12,13 +12,13 @@ terms    = *WS term *WS *cterm                        ;; [Y2 | Y4]
 
 cterm    = *WS "," *WS term                           ;; Y4
 
-avar     = *WS (var / atom_var / str_var)             ;; Y2
+avar     = *WS (var / atom-var / str-var)             ;; Y2
 
 cond     = var *WS op *WS term                        ;; {op, Y4, Y2, Y6}
 
-atom_var = "'" var "'"                                ;; {atom_var, Y3}
+atom-var = "'" var "'"                                ;; {atom_var, Y3}
 
-str_var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
+str-var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
 
 var      = "Y" *DIGIT                                 ;; {var, "Y"}
 

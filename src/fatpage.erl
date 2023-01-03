@@ -36,7 +36,7 @@ beam(Filename) when not is_map(Filename) ->
     beam(opts(Filename));
 beam(Opts) when is_map(Opts) ->
     #{in := File, out := OutFile} = Opts,
-    {ok, Mod, Beam} = compile:forms(forms(File), [debug_info]),
+    {Mod, Beam} = compile(forms(File)),
     file:write_file(OutFile, Beam),
     code:load_binary(Mod, OutFile, Beam),
     OutFile.
@@ -69,6 +69,12 @@ parse(String) when is_list(String) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% generate beam and write .beam file
+
+compile(Forms) ->
+    case compile:forms(fatpage_syntax:revert(Forms), [debug_info]) of
+        {ok, Mod, Beam} -> {Mod, Beam};
+        Err -> error(Err)
+    end.
 
 out_file(Filename, Ext) ->
     Dir = filename:dirname(Filename),

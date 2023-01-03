@@ -41,7 +41,7 @@ rule(Line, Name, Code, Type, X, Sub) ->
 rule(Name, Code, Type, X, Sub) ->
     {func, {rule_name(Name), ['Obj'], [], [rule_body(Code, Type, X, Sub)]}}.
 
-rule_body({var, 'Y'}, Type, X, Sub) -> fcall(Type, X, Sub);
+rule_body(undefined, Type, X, Sub) -> fcall(Type, X, Sub);
 rule_body(Code, Type, X, Sub) -> fcase(Code, Type, X, Sub).
 
 fcase(Code, Type, X, Deriv) ->
@@ -115,16 +115,16 @@ final(#deriv{type=final, x=appl, ds=Name}) -> {imp_fun, {rule_name(Name), 1}}.
 cfun([X]) ->
     {fun_, [{['O'], [], [call_final(X, 'O')]}]}.
 
-call_final(Chars, Var) when is_list(Chars) ->
-    {call, {final, [make_chars(Chars), Var]}};
-call_final({<<C1:8>>, <<C2:8>>}, Var) ->
-    {call, {final, [{tuple, [C1, C2]}, Var]}}.
+call_final({char, C}, Var) ->
+    {call, {final, [{utf8, utf8(C)}, Var]}};
+call_final({range, C1, C2}, Var) ->
+    {call, {final, [{tuple, [{utf8, utf8(C1)}, {utf8, utf8(C2)}]}, Var]}}.
 
 rule_name(N) ->
     lists:flatten(io_lib:format("-~s-", [N])).
 
-make_chars(L) ->
-    binary:list_to_bin(L).
+utf8(Char) ->
+    unicode:characters_to_binary([Char]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% parse preamble

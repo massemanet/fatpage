@@ -7,7 +7,7 @@
     left_recursive/1]).
 
 r2r(Rules) ->
-    lists:map(fun reify/1, Rules).
+    lists:map(fun rec/1, lists:filter(fun drop/1, Rules)).
 
 unroll(Rules) ->
     erase(fatpage),
@@ -17,6 +17,12 @@ left_recursive(Rules) ->
     fixpoint({Rules, predefined()}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% drop everythigng that's not a rule
+
+drop(X) ->
+    element(1, X) =:= rule.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(deriv, {type, x = {}, ds}).
 -record(rule, {name, deriv, code = <<>>}).
@@ -24,25 +30,23 @@ left_recursive(Rules) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% rewrite bootstrap parser output to internal form
 
-reify(D) when is_record(D, deriv) -> D;
-reify(Ds) when is_list(Ds) -> lists:map(fun reify/1, Ds);
+-define(IS_CH(C), is_integer(C)).
+%% a rule
+rec({rule, N, '=', D, C}) -> #rule{name = N, code = C, deriv = rec(D)};
 
-%% fatpage_bootstrap terms
-reify({rule, N, D, C}) -> #rule{name = N, code = C, deriv = reify(D)};
-reify({seq, Seqs})     -> #deriv{type = seq, ds = reify(Seqs)};
-reify({alt, Alts})     -> #deriv{type = alt, ds = reify(Alts)};
-reify({rep, Rep, D})   -> #deriv{type = rep, x = Rep, ds = reify(D)};
-reify({app, App})      -> #deriv{type = final, x = appl, ds = App};
-reify({chs, Chs})      -> #deriv{type = final, x = char, ds = Chs};
-
-%% abnfc terms
-reify({rule, def_rule, N, D, C})  -> #rule{name = N, code = C, deriv = reify(D)};
-reify({rulename, Name})           -> #deriv{type = final, x = appl, ds = Name};
-reify({char_alt, Alts})           -> #deriv{type = alt, ds = reify(Alts)};
-reify({char_seq, Seqs})           -> #deriv{type = seq, ds = reify(Seqs)};
-reify({repeat, Min, Max, Rep})    -> #deriv{type = rep, x = {Min, Max}, ds = reify(Rep)};
-reify({char_val, C0})             -> #deriv{type = final, x = char, ds = <<C0:8>>};
-reify({char_range, C1, C2})       -> #deriv{type = final, x = char, ds = {<<C1:8>>, <<C2:8>>}}.
+%% derivs
+rec(D) when is_record(D, deriv) -> D;
+rec(Ds) when is_list(Ds) -> lists:map(fun rec/1, Ds);
+rec({seq, [Seq]})        -> rec(Seq);
+rec({seq, Seqs})         -> #deriv{type = seq, ds = rec(Seqs)};
+rec({alt, [Alt]})        -> rec(Alt);
+rec({alt, Alts})         -> #deriv{type = alt, ds = rec(Alts)};
+rec({rep, [], D})        -> rec(D);
+rec({rep, [{1, 1}], D})  -> rec(D);
+rec({rep, [Rep], D})     -> #deriv{type = rep, x = Rep, ds = rec(D)};
+rec({app, App})          -> #deriv{type = final, x = appl, ds = App};
+rec({C1, {dash, C2}})    -> #deriv{type = final, x = char, ds = {range, C1, C2}};
+rec({char, C})           -> #deriv{type = final, x = char, ds = {char, C}}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% unroll nested rules
