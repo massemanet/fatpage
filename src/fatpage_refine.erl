@@ -2,51 +2,76 @@
 -module(fatpage_refine).
 
 -export(
-   [r2r/1,
-    unroll/1,
-    left_recursive/1]).
+   [r2r/1]).
 
 r2r(Rules) ->
-    lists:map(fun rec/1, lists:filter(fun drop/1, Rules)).
+    lists:foldl(
+      fun(Pass, Rs) -> Pass(Rs) end,
+      Rules,
+      [fun drop_non_rules/1,
+       fun rewrite_to_recs/1,
+       fun unroll/1,
+       fun left_recursive/1]).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% detect left (infinite) recursion
+
+left_recursive(Rules) ->
+    case fixpoint({Rules, predefined()}) of
+        {[], _} -> Rules;
+        Err -> error(Err)
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% flatten tree by creating virtual rules on the top level
 
 unroll(Rules) ->
     erase(fatpage),
-    unroll(r2r(Rules), []).
+    unroll(Rules, []).
 
-left_recursive(Rules) ->
-    fixpoint({Rules, predefined()}).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% rewrite parser output to record form
+
+rewrite_to_recs(Rules) ->
+    lists:map(fun rec/1, Rules).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% drop everythigng that's not a rule
 
-drop(X) ->
-    element(1, X) =:= rule.
+drop_non_rules(Rs) ->
+    lists:filter(fun is_rule/1, Rs).
+
+is_rule(X) ->
+    is_tuple(X) andalso element(1, X) =:= rule.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -record(deriv, {type, x = {}, ds}).
 -record(rule, {name, deriv, code = <<>>}).
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% rewrite bootstrap parser output to internal form
-
--define(IS_CH(C), is_integer(C)).
 %% a rule
+rec({rule, [N, '=', D, C]}) -> rec({rule, N, '=', D, C});
 rec({rule, N, '=', D, C}) -> #rule{name = N, code = C, deriv = rec(D)};
 
 %% derivs
-rec(D) when is_record(D, deriv) -> D;
-rec(Ds) when is_list(Ds) -> lists:map(fun rec/1, Ds);
-rec({seq, [Seq]})        -> rec(Seq);
-rec({seq, Seqs})         -> #deriv{type = seq, ds = rec(Seqs)};
-rec({alt, [Alt]})        -> rec(Alt);
-rec({alt, Alts})         -> #deriv{type = alt, ds = rec(Alts)};
-rec({rep, [], D})        -> rec(D);
-rec({rep, [{1, 1}], D})  -> rec(D);
-rec({rep, [Rep], D})     -> #deriv{type = rep, x = Rep, ds = rec(D)};
-rec({app, App})          -> #deriv{type = final, x = appl, ds = App};
-rec({C1, {dash, C2}})    -> #deriv{type = final, x = char, ds = {range, C1, C2}};
-rec({char, C})           -> #deriv{type = final, x = char, ds = {char, C}}.
+rec(#deriv{} = D)       -> D;
+rec(L) when is_list(L)  -> rec_list(L);
+rec({seq, [Seq]})       -> rec(Seq);
+rec({seq, Seqs})        -> #deriv{type = seq, ds = rec(Seqs)};
+rec({alt, [Alt]})       -> rec(Alt);
+rec({alt, Alts})        -> #deriv{type = alt, ds = rec(Alts)};
+rec({rep, [], D})       -> rec(D);
+rec({rep, [{1, 1}], D}) -> rec(D);
+rec({rep, [Rep], D})    -> #deriv{type = rep, x = Rep, ds = rec(D)};
+rec({app, App})         -> #deriv{type = final, x = appl, ds = App};
+rec({C1, {dash, C2}})   -> #deriv{type = final, x = char, ds = {range, C1, C2}};
+rec({char, C})          -> #deriv{type = final, x = char, ds = {char, C}}.
+
+rec_list(L) ->
+    case lists:all(fun is_binary/1, L) of
+        false -> lists:map(fun rec/1, L);
+        true -> #deriv{type = final, x = str, ds = binary:list_to_bin(L)}
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% unroll nested rules
@@ -175,6 +200,7 @@ type(nullable, _)                                   -> nullable;
 type(#deriv{type = rep, x = {0, _}}, _)             -> nullable;
 type(#deriv{type = rep, ds = D}, _)                 -> D;
 type(#deriv{type = final, x = char}, _)             -> non_nullable;
+type(#deriv{type = final, x = str}, _)              -> non_nullable;
 type(#deriv{type = final, x = appl, ds = 'EOF'}, _) -> non_nullable;
 type(#deriv{type = final, x = appl, ds = N}, Final) -> rewrite_name(N, Final);
 type(#deriv{type = alt, ds = As}, Final)            -> rewrite_alt(As, Final);

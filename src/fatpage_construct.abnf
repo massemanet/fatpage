@@ -2,7 +2,7 @@ term     = ternary / list / cons / tuple / avar / string / number
 
 list     = *WS "[" *WS [terms] *WS "]"                ;; {list, Y4}
 
-cons     = *WS "[" *WS terms *WS "|" *WS term *WS "]" ;; {cons, Y4, Y6}
+cons     = *WS "[" *WS terms *WS "|" *WS term *WS "]" ;; {cons, Y4, Y8}
 
 tuple    = *WS "{" *WS [terms] *WS "}"                ;; {tuple, Y4}
 
@@ -12,7 +12,7 @@ terms    = *WS term *WS *cterm                        ;; [Y2 | Y4]
 
 cterm    = *WS "," *WS term                           ;; Y4
 
-avar     = *WS (var / atom-var / str-var)             ;; Y2
+avar     = *WS (var / atom-var / str-var / num-var)   ;; Y2
 
 cond     = var *WS op *WS term                        ;; {op, Y4, Y2, Y6}
 
@@ -20,9 +20,11 @@ atom-var = "'" var "'"                                ;; {atom_var, Y3}
 
 str-var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
 
+num-var  = [ "i" / "d" / "x" ] "#" var                ;; {num_var, {Y1, Y3}}
+
 var      = "Y" *DIGIT                                 ;; {var, "Y"}
 
-number   = 1*DIGIT                                    ;; {number, Y}
+number   = 1*DIGIT                                    ;; {number, i#Y}
 
 string   = ALPHA *(ALPHA / DIGIT / "-" / "_")         ;; {string, "Y"}
 

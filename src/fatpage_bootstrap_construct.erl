@@ -143,7 +143,8 @@ string(String) -> string(String, fun '-term-'/1).
 '--virtual-6--'(Obj) ->
     alternative([fun '-var-'/1,
                  fun '-atom-var-'/1,
-                 fun '-str-var-'/1],
+                 fun '-str-var-'/1,
+                 fun '-num-var-'/1],
                 Obj).
 
 '-atom-var-'(Obj) ->
@@ -162,6 +163,14 @@ string(String) -> string(String, fun '-term-'/1).
         Err -> Err
     end.
 
+'-num-var-'(Obj) ->
+    case sequence([fun '--virtual-7--'/1,
+                   fun (O) -> final(<<35, 89>>, O) end,
+                   fun '--virtual-5--'/1], Obj) of
+        {ok, [_, Y2, _], O} -> {ok, {str_var, Y2}, O};
+        Err -> Err
+    end.
+
 '-var-'(Obj) ->
     case sequence([fun (O) -> final(<<89>>, O) end,
                    fun '--virtual-5--'/1], Obj) of
@@ -171,6 +180,16 @@ string(String) -> string(String, fun '-term-'/1).
 
 '--virtual-5--'(Obj) ->
     repeat(0, inf, fun '-DIGIT-'/1, Obj).
+
+'--virtual-7--'(Obj) ->
+    repeat(0, 1, fun '--virtual-8--'/1, Obj).
+
+'--virtual-8--'(Obj) ->
+    alternative([fun (O) -> final(<<$i>>, O) end,
+                 fun (O) -> final(<<$d>>, O) end,
+                 fun (O) -> final(<<$x>>, O) end],
+                Obj).
+         
 
 '-op-'(Obj) ->
     case alternative([fun (O) -> final(<<61, 61>>, O) end,

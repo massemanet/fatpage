@@ -3,8 +3,7 @@
 %% API
 -export(
    [parse/1,
-    unroll/1,
-    left_recursive/1,
+    refine/1,
     forms/1,
     pp/1,
     erl/1,
@@ -54,13 +53,10 @@ pp(Filename) ->
     fatpage_pp:forms(forms(Filename), Filename).
 
 forms(Filename) ->
-    fatpage_gen:forms(mod(Filename), unroll(Filename)).
+    fatpage_gen:forms(mod(Filename), refine(Filename)).
 
-left_recursive(Filename) ->
-    fatpage_refine:left_recursive(unroll(Filename)).
-
-unroll(Filename) ->
-    fatpage_refine:unroll(parse(Filename)).
+refine(Filename) ->
+    fatpage_refine:r2r(parse(Filename)).
 
 parse(Bin) when is_binary(Bin) ->
     parse(binary_to_list(Bin));

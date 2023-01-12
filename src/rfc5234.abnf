@@ -43,7 +43,7 @@ appl            =  rulename                          ;; {app, 'Y'}
 
 group           =  "(" *c-wsp alternation *c-wsp ")" ;; Y3
 
-option          =  "[" *c-wsp alternation *c-wsp "]" ;; {rep, {0, 1}, Y3}
+option          =  "[" *c-wsp alternation *c-wsp "]" ;; {rep, [{0, 1}], Y3}
 
 
 ; quoted string of SP and VCHAR without DQUOTE
@@ -71,7 +71,7 @@ dec-suffix-dot  =  "." 1*DIGIT                        ;; {dot, #Y2}
 
 dec-suffix-dash =  "-" 1*DIGIT                        ;; {dash, #Y2}
 
-hex-val         =  "x" 1*HEXDIG [ hex-suffix ]        ;; {hex, !Y3 ? x#Y2 : {x#Y2, ^Y3}}
+hex-val         =  "x" 1*HEXDIG [ hex-suffix ]        ;; !Y3 ? {num, x#Y2} : {x#Y2, ^Y3}
 
 hex-suffix      =  1*hex-suffix-dot / hex-suffix-dash
 

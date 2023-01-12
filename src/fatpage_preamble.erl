@@ -212,29 +212,22 @@ sequence([F|Fs], Obj, Xs) ->
         {error, R} -> {error, {unexpected, R}}
     end.
 
+final({B1, B2}, Obj) when is_binary(B1), is_binary(B2) ->
+    Sz = byte_size(B1),
+    case Sz =:= byte_size(B2) andalso peek_chars(Obj, Sz) of
+        {B0, Sz} when B1 =< B0, B0 =< B2 -> {ok, B0, bump_ptr(Obj, Sz)};
+        E -> {error, {miss, E, {B1, B2}}}
+    end;
 final(Bin, Obj) when is_binary(Bin) ->
     case peek_chars(Obj, byte_size(Bin)) of
-        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)}; 
+        {Bin, Sz} -> {ok, Bin, bump_ptr(Obj, Sz)};
         E -> {error, {miss, E, Bin}}
     end.
 
 peek_chars(#{ptr := Ptr, sz := Sz}, Num) when Sz < Ptr + Num ->
     {error, eof};
-peek_chars(#{bin := Bin, ptr := Ptr}, 2) ->
-    case binary:part(Bin, {Ptr, 2}) of
-        <<0:1, _:7, 0:1, _:7>> = B -> {B, 2};
-        B -> error({unhandled_utf8, B})
-    end;
-peek_chars(#{bin := Bin, ptr := Ptr}, 1) ->
-    case binary:part(Bin, {Ptr, 1}) of
-        <<0:1, _:7>> = B -> {B, 1};
-        <<6:3, _:5>> = B1 ->
-            case binary:part(Bin, {Ptr+1, 1}) of
-                <<2:2, _:6>> = B2 -> {<<B1/binary, B2/binary>>, 2};
-                B2 -> error({unhandled_utf8, B1, B2})
-            end;
-        B0 -> error({unhandled_utf8, B0})
-    end.
+peek_chars(#{bin := Bin, ptr := Ptr}, N) ->
+    {binary:part(Bin, {Ptr, N}), N}.
 
 bump_ptr(Obj, N) ->
     maps:update_with(ptr, fun(Ptr) -> Ptr+N end, Obj).

@@ -43,6 +43,8 @@ stx({func, {Name, Args, G, Body}}) ->
     stx({func, {Name, stx({clauses, [{Args, G, Body}]})}});    
 stx({record, {Name, Fields}}) ->
     stx({attr, {record, [Name, {list, Fields}]}});
+stx({utf8, Bin}) when is_binary(Bin) ->
+    stx({bin, [stx({integer, I}) || I <- binary_to_list(Bin)]});
 
 %% primitives
 stx({atom, A}) ->
@@ -59,8 +61,6 @@ stx({list, L}) when is_list(L) ->
     erl_syntax:list(stx(L));
 stx({tuple, L}) when is_list(L) ->
     erl_syntax:tuple(stx(L));
-stx({utf8, Bin}) when is_binary(Bin) ->
-    erl_syntax:binary([stx(I) || I <- binary_to_list(Bin)]);
 
 %% expressions
 stx({call, {F, Args}}) ->

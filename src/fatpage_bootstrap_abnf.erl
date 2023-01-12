@@ -130,7 +130,7 @@ string(String) -> string(String, fun '-rulelist-'/1).
                    fun (O) -> final(42, O) end,
                    fun '--virtual-18--'/1], Obj) of
         {ok, [Y1, _, Y3], O} -> {ok, {if Y1==[] -> 0; true -> numerize(Y1, 10) end,
-                                      if Y3==[] -> inf; true -> numerize(Y1, 10) end}, O};
+                                      if Y3==[] -> inf; true -> numerize(Y3, 10) end}, O};
         Err -> Err
     end.
 
