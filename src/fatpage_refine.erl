@@ -50,8 +50,8 @@ is_rule(X) ->
 -record(rule, {name, deriv, code = <<>>}).
 
 %% a rule
-rec({rule, [N, '=', D, C]}) -> rec({rule, N, '=', D, C});
-rec({rule, N, '=', D, C}) -> #rule{name = N, code = C, deriv = rec(D)};
+rec({rule, N, '=', D, C}) ->
+    #rule{name = N, code = construct(C), deriv = rec(D)};
 
 %% derivs
 rec(#deriv{} = D)       -> D;
@@ -64,14 +64,20 @@ rec({rep, [], D})       -> rec(D);
 rec({rep, [{1, 1}], D}) -> rec(D);
 rec({rep, [Rep], D})    -> #deriv{type = rep, x = Rep, ds = rec(D)};
 rec({app, App})         -> #deriv{type = final, x = appl, ds = App};
-rec({C1, {dash, C2}})   -> #deriv{type = final, x = char, ds = {range, C1, C2}};
-rec({char, C})          -> #deriv{type = final, x = char, ds = {char, C}}.
+rec({C1, {dash, C2}})   -> #deriv{type = final, x = range, ds = {C1, C2}};
+rec({char, C})          -> #deriv{type = final, x = char, ds = C}.
 
 rec_list(L) ->
     case lists:all(fun is_binary/1, L) of
         false -> lists:map(fun rec/1, L);
         true -> #deriv{type = final, x = str, ds = binary:list_to_bin(L)}
     end.
+
+construct(Code) ->
+    
+    erlang:display({construct, Code}),
+    Code.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% unroll nested rules
@@ -200,6 +206,7 @@ type(nullable, _)                                   -> nullable;
 type(#deriv{type = rep, x = {0, _}}, _)             -> nullable;
 type(#deriv{type = rep, ds = D}, _)                 -> D;
 type(#deriv{type = final, x = char}, _)             -> non_nullable;
+type(#deriv{type = final, x = range}, _)            -> non_nullable;
 type(#deriv{type = final, x = str}, _)              -> non_nullable;
 type(#deriv{type = final, x = appl, ds = 'EOF'}, _) -> non_nullable;
 type(#deriv{type = final, x = appl, ds = N}, Final) -> rewrite_name(N, Final);

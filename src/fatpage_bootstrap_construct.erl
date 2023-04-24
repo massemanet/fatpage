@@ -147,11 +147,22 @@ string(String) -> string(String, fun '-term-'/1).
                  fun '-num-var-'/1],
                 Obj).
 
+'-number-'(Obj) ->
+    case sequence([fun '--virtual-0--'/1,
+                   fun '--virtual-9--'/1],
+                  Obj) of
+        {ok, [_, Y2], O} -> {ok, Y2, O};
+        Err -> Err
+    end.
+
+'--virtual-9--'(Obj) ->
+    repeat(1, inf, fun '-DIGIT-'/1, Obj).
+
 '-atom-var-'(Obj) ->
     case sequence([fun (O) -> final(<<39, 89>>, O) end,
                    fun '--virtual-5--'/1,
                    fun (O) -> final(<<39>>, O) end], Obj) of
-        {ok, [_, Y2, _], O} -> {ok, {atom_var, Y2}, O};
+        {ok, [_, Y2, _], O} -> {ok, {var, atomize(Y2)}, O};
         Err -> Err
     end.
 
@@ -159,15 +170,15 @@ string(String) -> string(String, fun '-term-'/1).
     case sequence([fun (O) -> final(<<34, 89>>, O) end,
                    fun '--virtual-5--'/1,
                    fun (O) -> final(<<34>>, O) end], Obj) of
-        {ok, [_, Y2, _], O} -> {ok, {str_var, Y2}, O};
+        {ok, [_, Y2, _], O} -> {ok, {var, squeeze(Y2)}, O};
         Err -> Err
     end.
 
 '-num-var-'(Obj) ->
     case sequence([fun '--virtual-7--'/1,
-                   fun (O) -> final(<<35, 89>>, O) end,
-                   fun '--virtual-5--'/1], Obj) of
-        {ok, [_, Y2, _], O} -> {ok, {str_var, Y2}, O};
+                   fun (O) -> final(<<35>>, O) end,
+                   fun '-var-'/1], Obj) of
+        {ok, [Y1, _, Y3], O} -> {ok, {num, Y3, Y1}, O};
         Err -> Err
     end.
 
@@ -187,7 +198,8 @@ string(String) -> string(String, fun '-term-'/1).
 '--virtual-8--'(Obj) ->
     alternative([fun (O) -> final(<<$i>>, O) end,
                  fun (O) -> final(<<$d>>, O) end,
-                 fun (O) -> final(<<$x>>, O) end],
+                 fun (O) -> final(<<$x>>, O) end,
+                 fun '-var-'/1],
                 Obj).
          
 
@@ -202,9 +214,6 @@ string(String) -> string(String, fun '-term-'/1).
         {ok, Y, O} -> {ok, atomize(Y), O};
         Err -> Err
     end.
-
-'-number-'(Obj) ->
-    repeat(1, inf, fun '-DIGIT-'/1, Obj).
 
 -record(obj, {ptr, bin, sz}).
 

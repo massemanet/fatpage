@@ -86,8 +86,10 @@ bindings(Nbindings, Code) ->
 bound_vars(Code) ->
     lists:usort(bound_vars(Code, [])).
 
-bound_vars({var, Var}, Vs) ->
-    [Var|Vs].
+bound_vars({var, Var}, Vs) -> [Var|Vs];
+bound_vars(T, Vs) when is_tuple(T) -> bound_vars(tuple_to_list(T), Vs);
+bound_vars(L, Vs) when is_list(L) -> lists:foldl(fun bound_vars/2, Vs, L);
+bound_vars(_, Vs) -> Vs.
 
 avail_vars(N) ->
     [match_var(I) || I <- lists:seq(1, N)].
@@ -109,15 +111,19 @@ match_var(V, Vs) ->
 finals(Derivs) ->
     {list, [final(Deriv) || Deriv <- Derivs]}.
 
-final(#deriv{type=final, x=char, ds=C}) -> cfun([C]);
+final(#deriv{type=final, x=char, ds=C}) -> cfun({char, C});
+final(#deriv{type=final, x=str, ds=S}) -> cfun({string, S});
+final(#deriv{type=final, x=range, ds=R}) -> cfun({range, R});
 final(#deriv{type=final, x=appl, ds=Name}) -> {imp_fun, {rule_name(Name), 1}}.
 
-cfun([X]) ->
+cfun(X) ->
     {fun_, [{['O'], [], [call_final(X, 'O')]}]}.
 
+call_final({string, S}, Var) ->
+    {call, {final, [S, Var]}};
 call_final({char, C}, Var) ->
     {call, {final, [{utf8, utf8(C)}, Var]}};
-call_final({range, C1, C2}, Var) ->
+call_final({range, {C1, C2}}, Var) ->
     {call, {final, [{tuple, [{utf8, utf8(C1)}, {utf8, utf8(C2)}]}, Var]}}.
 
 rule_name(N) ->

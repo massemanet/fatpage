@@ -51,7 +51,7 @@ stx({atom, A}) ->
     erl_syntax:atom(A);
 stx({bin, Vs}) ->
     erl_syntax:binary(stx({bin_fields, stx(Vs)}));
-stx({cons, {H, T}}) ->
+stx({cons, H, T}) ->
     erl_syntax:cons(stx(H), stx(T));
 stx({integer, I}) when is_integer(I) ->
     erl_syntax:integer(I);

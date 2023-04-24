@@ -45,7 +45,6 @@ group           =  "(" *c-wsp alternation *c-wsp ")" ;; Y3
 
 option          =  "[" *c-wsp alternation *c-wsp "]" ;; {rep, [{0, 1}], Y3}
 
-
 ; quoted string of SP and VCHAR without DQUOTE
 
 val             =  char-val / num-val / prose-val
@@ -55,7 +54,7 @@ char-val        =  DQUOTE *(%x20-21 / %x23-7E) DQUOTE ;; "Y2"
 num-val         =  "%" (bin-val / dec-val / hex-val)  ;; Y2
 
 ; series of concatenated bit values or single ONEOF range
-bin-val         =  "b" 1*BIT [ bin-suffix ]           ;; {bin, !Y3 ? b#Y2 : {b#Y2, ^Y3}}
+bin-val         =  "b" 1*BIT [ bin-suffix ]           ;; !Y3 ? {char, b#Y2} : {b#Y2, ^Y3}
 
 bin-suffix      =  1*bin-suffix-dot / bin-suffix-dash
 
@@ -63,15 +62,15 @@ bin-suffix-dot  =  "." 1*BIT                          ;; {dot, b#Y2}
 
 bin-suffix-dash =  "-" 1*BIT                          ;; {dash, b#Y2}
 
-dec-val         =  "d" 1*DIGIT [ dec-suffix ]         ;; {dec, !Y3 ? #Y2 : {#Y2, ^Y3}}
+dec-val         =  "d" 1*DIGIT [ dec-suffix ]         ;; !Y3 ? {char, i#Y2} : {i#Y2, ^Y3}
 
 dec-suffix      =  1*dec-suffix-dot / dec-suffix-dash
 
-dec-suffix-dot  =  "." 1*DIGIT                        ;; {dot, #Y2}
+dec-suffix-dot  =  "." 1*DIGIT                        ;; {dot, i#Y2}
 
-dec-suffix-dash =  "-" 1*DIGIT                        ;; {dash, #Y2}
+dec-suffix-dash =  "-" 1*DIGIT                        ;; {dash, i#Y2}
 
-hex-val         =  "x" 1*HEXDIG [ hex-suffix ]        ;; !Y3 ? {num, x#Y2} : {x#Y2, ^Y3}
+hex-val         =  "x" 1*HEXDIG [ hex-suffix ]        ;; !Y3 ? {char, x#Y2} : {x#Y2, ^Y3}
 
 hex-suffix      =  1*hex-suffix-dot / hex-suffix-dash
 

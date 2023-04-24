@@ -14,17 +14,17 @@ cterm    = *WS "," *WS term                           ;; Y4
 
 avar     = *WS (var / atom-var / str-var / num-var)   ;; Y2
 
-cond     = var *WS op *WS term                        ;; {op, Y4, Y2, Y6}
+number   = *WS 1*DIGIT                                ;; i#Y2
 
-atom-var = "'" var "'"                                ;; {atom_var, Y3}
+cond     = var *WS op *WS term                        ;; {op, Y3, Y1, Y5}
 
-str-var  = DQUOTE var DQUOTE                          ;; {str_var, Y3}
+atom-var = "'" var "'"                                ;; {var, 'Y2'}
 
-num-var  = [ "i" / "d" / "x" ] "#" var                ;; {num_var, {Y1, Y3}}
+str-var  = DQUOTE var DQUOTE                          ;; {var, "Y2"}
+
+num-var  = [ "i" / "d" / "x" / var] "#" var           ;; {o Y3, Y1}
 
 var      = "Y" *DIGIT                                 ;; {var, "Y"}
-
-number   = 1*DIGIT                                    ;; {number, i#Y}
 
 string   = ALPHA *(ALPHA / DIGIT / "-" / "_")         ;; {string, "Y"}
 

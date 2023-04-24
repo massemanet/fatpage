@@ -31,14 +31,14 @@ bootstrap_parse(Str) ->
 
 refine(X) ->
     case X of
-        X when is_list(X) -> [refine(E) || E <- X];
+        X when is_list(X)    -> [refine(E) || E <- X];
         {rule, [N, O, D, C]} -> {rule, N, O, refine(D), C};
-        {alt, [A]} -> refine(A);
-        {alt, As} -> {alt, refine(As)};
-        {seq, [S]} -> refine(S);
-        {seq, Ss} -> {seq, refine(Ss)};
-        {rep, [], D} -> refine(D);
-        {rep, [{1, 1}], D} -> refine(D);
-        {rep, [R], D} -> {rep, R, refine(D)};
+        {alt, [A]}           -> refine(A);
+        {seq, [S]}           -> refine(S);
+        {rep, [], D}         -> refine(D);
+        {rep, [{1, 1}], D}   -> refine(D);
+        {alt, As}            -> {alt, refine(As)};
+        {seq, Ss}            -> {seq, refine(Ss)};
+        {rep, [R], D}        -> {rep, R, refine(D)};
         _ -> X
     end.
