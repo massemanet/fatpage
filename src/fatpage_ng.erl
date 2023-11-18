@@ -1,15 +1,16 @@
--module(permutp).
+-module(fatpage_ng).
 
 -export [go/1].
 
 %%% The grammar
 %%%
-%%% root -> expr
+%%% root -> expr cexpr*   => [1|2]
+%%% cexpr -> ',' expr     => 2
 %%% expr -> term aop term => {2, 1, 3}
 %%%       | term
 %%% term -> fact mop fact => {2, 1, 3}
 %%%       | fact
-%%% fact -> '(' expr ')' => 2
+%%% fact -> '(' expr ')'  => 2
 %%%       | lit
 %%% aop  -> '+'
 %%%       | '-'
@@ -22,7 +23,11 @@
 
 %%% 'p' is the parser rules, generated from the grammar.
 p(root, S) ->
-    p(expr, S);
+    seq([expr, {cexpr, 0, inf}], fun([A, B]) -> [A|B] end, S);
+p({cexpr, 0, inf}, S) ->
+    rep(cexpr, 0, inf, S);
+p(cexpr, S) ->
+    seq([<<",">>, expr], fun([_, B]) -> B end, S);
 p(expr, S) ->
     alt([[term, aop, term], term], S);
 p([term, aop, term], S) ->
@@ -45,6 +50,8 @@ p(num, S) ->
     re(num, S);
 p(var, S) ->
     re(var, S);
+p(<<",">>, S) ->
+    str(<<",">>, S);
 p(<<"(">>, S) ->
     str(<<"(">>, S);
 p(<<")">>, S) ->
@@ -73,6 +80,19 @@ go(Text) ->
     catch throw:R -> error({top, R})
     end.
 
+%% repetition
+rep(Rep, Min, Max, S) ->
+    rep(Rep, Min, Max, 0, [], S).
+
+rep(Rep, Min, Max, N, Rs, S0) ->
+    try p(Rep, S0) of
+        {_, S} when Max =< N -> throw({too_many, {Rep, Min, Max, N, S}});
+        {R, S} -> rep(Rep, Min, Max, N+1, [R|Rs], S)
+    catch
+        throw:_ when Min =< N -> {lists:reverse(Rs), S0};
+        throw:_ -> throw({too_few, {Rep, Min, Max, N, S0}})
+    end.
+
 %% alternatives
 alt([], S) ->
     throw({no_alt, S});
@@ -84,7 +104,7 @@ alt([Alt|Alts], S) ->
 %% sequences
 seq(Seqs, Ret, S0) ->
     [S|Ys] = lists:foldl(fun seq/2, [S0], Seqs),
-    {Ret(Ys), S}.
+    {Ret(lists:reverse(Ys)), S}.
 
 seq(Seq, [S0|O]) ->
     {T, S} = p(Seq, S0),
