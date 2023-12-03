@@ -129,22 +129,25 @@ re(Key, S) ->
     end.
 
 %%% string literals.
-str(Str, S) ->
-    Text = s(text, S),
-    Size = s(size, S),
-    Pos = s(pos, S),
-    Sz = byte_size(Str),
-    case Pos+Sz =< Size andalso binary:part(Text, Pos, Sz) of
-        Str -> {Str, s(pos, Pos+Sz, S)};
-        Z -> throw({nomatch, {Str, Z}})
+str(Str, S0) ->
+    case s({peek, byte_size(Str)}, S0) of
+        {Str, S} -> {Str, S};
+        {Ztr, _} -> throw({nomatch, {Str, Ztr}})
     end.
 
 %%% 's' is the state. constructor, getter, setter,
 s(Text) ->
     T = to_str(Text),
     #{text => T, size => byte_size(T), pos => 0, re => regexps()}.
+
+s({peek, Sz}, S = #{text := Text, size := Size, pos := Pos}) ->
+    case Pos+Sz =< Size andalso binary:part(Text, Pos, Sz) of
+        false -> {eof, S};
+        R -> {R, S#{pos => Pos+Sz}}
+    end;
 s(Key, S) ->
     maps:get(Key, S).
+
 s(Key, Val, S) ->
     S#{Key => Val}.
 
